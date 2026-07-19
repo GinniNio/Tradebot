@@ -124,6 +124,15 @@ def _compute_confidence(signal_type: str, trigger_count: int,
             except Exception:
                 pass
         return 65
+    elif signal_type == "swing":
+        # The swing tracker persists its transparent 0-100 score in extra_data.
+        # It is a research ranking, never a probability of profit.
+        if extra_data:
+            try:
+                return max(0, min(100, int(json.loads(extra_data).get("score", 0))))
+            except Exception:
+                pass
+        return 0
     return 50
 
 
