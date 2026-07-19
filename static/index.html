@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Tradebot Dashboard</title>
+<style>
+  :root {
+    --accent2: #7c3aed;
+    --font:    'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+    --mono:    'Consolas', 'SF Mono', 'Courier New', monospace;
+  }
+  [data-theme="dark"] {
+    --bg:       #111111;
+    --surface:  #1a1a1a;
+    --surface2: #232323;
+    --border:   #2e2e2e;
+    --accent:   #d4ff00;
+    --green:    #22c55e;
+    --red:      #ef4444;
+    --orange:   #f59e0b;
+    --text:     #f0f0f0;
+    --muted:    #9a9a9a;
+    --badge-paper-bg: #1a1a00;
+    --badge-live-bg:  #2a0000;
+  }
+  [data-theme="light"] {
+    --bg:       #ffffff;
+    --surface:  #f7f7f8;
+    --surface2: #eef0f2;
+    --border:   #d4d4d8;
+    --accent:   #16a34a;
+    --green:    #16a34a;
+    --red:      #dc2626;
+    --orange:   #ea580c;
+    --text:     #18181b;
+    --muted:    #6b7280;
+    --badge-paper-bg: #ecfdf5;
+    --badge-live-bg:  #fef2f2;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:var(--bg); color:var(--text);
+               font-family:var(--font); font-size:15px; overflow:hidden;
+               -webkit-font-smoothing:antialiased; }
+  .mono, .token-addr, code, pre { font-family:var(--mono); }
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  /* Three rows: header (48), research banner (auto), body (rest). */
+  #app { display:grid; grid-template-rows:48px auto 1fr; height:100vh; }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 20px; border-bottom:1px solid var(--border);
+    background:var(--surface);
+  }
+  .logo { font-size:15px; font-weight:700; letter-spacing:3px; color:var(--accent); }
+  .logo span { color:var(--muted); font-weight:400; }
+  .header-right { display:flex; align-items:center; gap:20px; }
+  .mode-badge {
+    padding:3px 10px; border-radius:3px; font-size:10px; letter-spacing:1px;
+    font-weight:700;
+  }
+  .mode-paper { background:var(--badge-paper-bg); color:var(--accent); border:1px solid var(--accent); }
+  .mode-live  { background:var(--badge-live-bg);  color:var(--red);    border:1px solid var(--red);    }
+  .sol-balance {
+    display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted);
+  }
+  .sol-balance strong { color:var(--text); font-size:14px; }
+  .status-dot {
+    width:7px; height:7px; border-radius:50%; background:var(--green);
+    box-shadow:0 0 6px var(--green); animation:pulse 2s infinite;
+  }
+  #theme-btn {
+    background:transparent; color:var(--text); border:1px solid var(--border);
+    border-radius:4px; width:30px; height:26px; cursor:pointer; font-size:14px;
+    line-height:1; padding:0; transition:background .15s, border-color .15s;
+  }
+  #theme-btn:hover { background:var(--surface2); border-color:var(--muted); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── Body ────────────────────────────────────────────────── */
+  #body { display:grid; grid-template-columns:220px 1fr; overflow:hidden; }
+
+  /* ── Sidebar ─────────────────────────────────────────────── */
+  aside {
+    background:var(--surface); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; overflow-y:auto; padding:12px 0;
+  }
+  .sidebar-section { padding:8px 16px; margin-top:8px; }
+  .sidebar-label {
+    font-size:9px; letter-spacing:2px; color:var(--muted);
+    text-transform:uppercase; margin-bottom:8px;
+  }
+  .strategy-card {
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:4px; padding:10px 12px; margin-bottom:8px; cursor:pointer;
+    transition:border-color .15s;
+  }
+  .strategy-card:hover { border-color:#333; }
+  .strategy-card.active { border-color:var(--accent); }
+  .strategy-name {
+    font-size:11px; font-weight:700; letter-spacing:.5px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .strategy-name .badge {
+    font-size:9px; padding:1px 5px; border-radius:2px;
+    background:var(--green); color:#000; font-weight:700;
+  }
+  .strategy-name .badge.off { background:var(--muted); color:#fff; }
+  .strategy-stat { font-size:10px; color:var(--muted); margin-top:4px; }
+  .strategy-stat strong { color:var(--accent); }
+
+  #create-btn {
+    margin:8px 16px; padding:8px; background:var(--accent);
+    color:#000; font-family:var(--font); font-size:11px; font-weight:700;
+    letter-spacing:1px; border:none; cursor:pointer; border-radius:3px;
+    text-transform:uppercase; transition:opacity .15s;
+  }
+  #create-btn:hover { opacity:.85; }
+
+  .sidebar-divider { border:none; border-top:1px solid var(--border); margin:8px 0; }
+
+  .stat-row {
+    display:flex; justify-content:space-between; padding:4px 16px;
+    font-size:11px; color:var(--muted);
+  }
+  .stat-row strong { color:var(--text); }
+  .stat-pnl { color:var(--green); }
+  .stat-pnl.neg { color:var(--red); }
+
+  /* ── Main panel ──────────────────────────────────────────── */
+  main {
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+
+  /* ── Tab bar ─────────────────────────────────────────────── */
+  .tabs {
+    display:flex; gap:0; border-bottom:1px solid var(--border);
+    background:var(--surface); padding:0 16px;
+  }
+  .tab {
+    padding:10px 16px; font-size:11px; letter-spacing:1px; color:var(--muted);
+    cursor:pointer; border-bottom:2px solid transparent;
+    text-transform:uppercase; transition:color .15s;
+  }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .tab:hover:not(.active) { color:var(--text); }
+
+  /* ── Content area ────────────────────────────────────────── */
+  .content { flex:1; overflow-y:auto; padding:16px; }
+
+  /* ── Table ───────────────────────────────────────────────── */
+  .table-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:11px; }
+  thead th {
+    text-align:left; padding:6px 10px; color:var(--muted);
+    border-bottom:1px solid var(--border); font-weight:400;
+    letter-spacing:1px; font-size:9px; text-transform:uppercase;
+    white-space:nowrap;
+  }
+  tbody tr {
+    border-bottom:1px solid #151515; transition:background .1s;
+  }
+  tbody tr:hover { background:var(--surface2); }
+  td { padding:8px 10px; vertical-align:middle; }
+
+  .token-cell { display:flex; flex-direction:column; }
+  .token-sym  { font-weight:700; font-size:12px; color:var(--text); }
+  .token-addr { font-size:9px; color:var(--muted); margin-top:1px; }
+
+  .chain-badge {
+    display:inline-block; padding:1px 5px; border-radius:2px;
+    font-size:9px; font-weight:700; letter-spacing:.5px;
+  }
+  .chain-solana   { background:#1a0533; color:#9945ff; }
+  .chain-ethereum { background:#0d1f3c; color:#627eea; }
+  .chain-bsc      { background:#1a1400; color:#f0b90b; }
+  .chain-base     { background:#001129; color:#0052ff; }
+
+  .confidence-bar {
+    width:60px; height:4px; background:#1a1a1a; border-radius:2px; overflow:hidden;
+    display:inline-block; vertical-align:middle; margin-right:6px;
+  }
+  .confidence-fill { height:100%; border-radius:2px; }
+  .conf-high   { background:var(--green); }
+  .conf-med    { background:var(--orange); }
+  .conf-low    { background:var(--red); }
+
+  .status-pill {
+    display:inline-block; padding:2px 7px; border-radius:2px;
+    font-size:9px; font-weight:700; letter-spacing:.5px;
+  }
+  .status-new      { background:#001a00; color:var(--green); border:1px solid #0a3a0a; }
+  .status-open     { background:#001224; color:#60a5fa; border:1px solid #0a2040; }
+  .status-watching { background:#1a1200; color:var(--orange); border:1px solid #3a2a00; }
+  .status-triggered{ background:#1a0000; color:var(--red); border:1px solid #3a0000; }
+
+  .pnl { font-weight:700; }
+  .pnl.pos { color:var(--green); }
+  .pnl.neg { color:var(--red); }
+  .pnl.flat { color:var(--muted); }
+
+  .sig-type {
+    font-size:9px; padding:1px 5px; border-radius:2px; font-weight:700;
+    letter-spacing:.5px;
+  }
+  .sig-wallet { background:#0d001a; color:var(--accent2); border:1px solid #1a0033; }
+  .sig-zombie { background:#1a0a00; color:var(--orange);  border:1px solid #3a1500; }
+
+  .ts { color:var(--muted); font-size:9px; }
+
+  .empty-state {
+    text-align:center; padding:60px 20px; color:var(--muted);
+  }
+  .empty-state .icon { font-size:32px; margin-bottom:12px; }
+  .empty-state p { font-size:11px; }
+
+  /* ── Hot tokens row ─────────────────────────────────────── */
+  .hot-strip {
+    display:flex; gap:8px; padding:8px 16px; overflow-x:auto;
+    background:var(--surface); border-bottom:1px solid var(--border);
+    scrollbar-width:none;
+  }
+  .hot-strip::-webkit-scrollbar { display:none; }
+  .hot-chip {
+    flex-shrink:0; display:flex; align-items:center; gap:6px;
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:3px; padding:4px 10px; font-size:10px; white-space:nowrap;
+  }
+  .hot-chip .hw { color:var(--accent); font-weight:700; }
+
+  /* ── Table toolbar (+ Add button above tables) ──────────── */
+  .table-toolbar {
+    display:flex; justify-content:flex-end; padding:8px 12px 4px 12px;
+  }
+  .btn-add {
+    background:var(--accent); color:#000; border:none; cursor:pointer;
+    font-family:var(--font); font-size:11px; font-weight:700; letter-spacing:1px;
+    padding:6px 14px; border-radius:3px; text-transform:uppercase;
+    transition:opacity .15s;
+  }
+  .btn-add:hover { opacity:.85; }
+
+  /* ── Modal ───────────────────────────────────────────────── */
+  .modal-overlay {
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.8);
+    z-index:100; align-items:center; justify-content:center;
+  }
+  .modal-overlay.open { display:flex; }
+  .modal {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:6px; width:500px; max-width:95vw; padding:24px;
+  }
+  .modal h2 {
+    font-size:13px; letter-spacing:2px; color:var(--accent);
+    text-transform:uppercase; margin-bottom:4px;
+  }
+  .modal p { font-size:10px; color:var(--muted); margin-bottom:16px; }
+  .modal label { display:block; font-size:10px; color:var(--muted);
+                 letter-spacing:1px; margin-bottom:4px; text-transform:uppercase; }
+  .modal textarea, .modal input, .modal select {
+    width:100%; background:var(--bg); border:1px solid var(--border);
+    color:var(--text); font-family:var(--font); font-size:12px;
+    padding:8px 10px; border-radius:3px; margin-bottom:12px; outline:none;
+  }
+  .modal textarea { height:80px; resize:none; }
+  .modal textarea:focus, .modal input:focus { border-color:var(--accent); }
+  .modal-example {
+    font-size:10px; color:var(--muted); margin-bottom:12px;
+    padding:8px; background:var(--bg); border-radius:3px;
+    border-left:2px solid var(--accent);
+  }
+  .modal-row { display:flex; gap:8px; }
+  .modal-row > * { flex:1; }
+  .btn-primary {
+    width:100%; padding:10px; background:var(--accent); color:#000;
+    font-family:var(--font); font-size:12px; font-weight:700; letter-spacing:1px;
+    border:none; cursor:pointer; border-radius:3px; text-transform:uppercase;
+    transition:opacity .15s;
+  }
+  .btn-primary:hover { opacity:.85; }
+  .btn-secondary {
+    width:100%; padding:10px; background:transparent; color:var(--muted);
+    font-family:var(--font); font-size:12px; border:1px solid var(--border);
+    cursor:pointer; border-radius:3px; text-transform:uppercase;
+    margin-top:6px; transition:color .15s;
+  }
+  .btn-secondary:hover { color:var(--text); }
+  .strategy-result {
+    margin-top:12px; padding:10px; background:var(--bg);
+    border:1px solid var(--border); border-radius:3px; font-size:10px;
+    color:var(--green); display:none;
+  }
+
+  /* ── Scrollbar ───────────────────────────────────────────── */
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+  /* ── Flash animation on new data ─────────────────────────── */
+  @keyframes flash { 0%{background:#1a1a00} 100%{background:transparent} }
+  .flash { animation:flash .5s ease-out; }
+
+  /* ── Research-mode banner (top of page) ──────────────────── */
+  .research-banner {
+    background: linear-gradient(90deg, #1a1200, #2a1a00);
+    color: var(--orange);
+    border-bottom: 1px solid var(--orange);
+    padding: 8px 20px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .research-banner .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--orange);
+    box-shadow: 0 0 6px var(--orange);
+  }
+  .research-banner.alert {
+    background: linear-gradient(90deg, #2a0000, #3a0000);
+    color: var(--red);
+    border-bottom-color: var(--red);
+  }
+  .research-banner.alert .dot {
+    background: var(--red);
+    box-shadow: 0 0 6px var(--red);
+  }
+
+  /* ── State badges (RESEARCH / PAPER / PAUSED / etc) ──────── */
+  .state-badge {
+    display:inline-block; padding:2px 6px; border-radius:2px;
+    font-size:9px; font-weight:700; letter-spacing:.5px;
+  }
+  .state-research      { background:#1a1200; color:var(--orange); border:1px solid #3a2a00; }
+  .state-paused        { background:#1a1a1a; color:var(--muted);  border:1px solid #2e2e2e; }
+  .state-backlog       { background:#0a0a14; color:#6b7280;       border:1px solid #1a1a2e; }
+  .state-paper         { background:#001a00; color:var(--green);  border:1px solid #0a3a0a; }
+  .state-live_candidate{ background:#1a0a00; color:var(--orange); border:1px solid #3a1500; }
+  .state-live          { background:#2a0000; color:var(--red);    border:1px solid #3a0000; }
+  .state-stop          { background:#0a0a0a; color:#555;          border:1px solid #1a1a1a; }
+
+  .can-trade-yes { color: var(--red);   font-weight: 700; }
+  .can-trade-no  { color: var(--muted); }
+
+  /* ── Ops health grid (top panel of Research Health tab) ──── */
+  .ops-grid {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap:10px; margin-bottom:20px;
+  }
+  .ops-card {
+    background:var(--surface2); border:1px solid var(--border);
+    border-radius:4px; padding:12px;
+  }
+  .ops-card .label {
+    font-size:9px; letter-spacing:1.5px; color:var(--muted);
+    text-transform:uppercase; margin-bottom:6px;
+  }
+  .ops-card .value {
+    font-size:22px; font-weight:700; color:var(--text);
+    font-family: var(--mono);
+  }
+  .ops-card.alert .value { color: var(--red); }
+  .ops-card .sub { font-size:10px; color:var(--muted); margin-top:4px; }
+
+  /* ── Source filter chips ─────────────────────────────────── */
+  .source-filter {
+    display:flex; gap:6px; margin: 8px 0 12px 0;
+  }
+  .source-chip {
+    padding: 4px 10px; border-radius: 3px; font-size: 10px;
+    letter-spacing: 1px; cursor: pointer; text-transform: uppercase;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--muted); font-weight: 700;
+  }
+  .source-chip.active { color: var(--accent); border-color: var(--accent); }
+  .source-chip:hover:not(.active) { color: var(--text); }
+
+  /* ── Section heading ─────────────────────────────────────── */
+  .section-h {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); margin: 16px 0 8px 0;
+  }
+
+  /* ── Number-friendly cells for outcome table ─────────────── */
+  td.num { font-family: var(--mono); font-size: 10px; }
+  td.num.up   { color: var(--green); }
+  td.num.down { color: var(--red); }
+  td.num.flat { color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">TRADEBOT<span> / v1.0</span></div>
+    <div class="header-right">
+      <div class="sol-balance">
+        <span>SOL BALANCE</span>
+        <strong id="sol-bal">—</strong>
+      </div>
+      <span id="mode-badge" class="mode-badge mode-paper">PAPER</span>
+      <button id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark theme">☾</button>
+      <div class="status-dot" id="ws-dot" style="background:var(--red);box-shadow:0 0 6px var(--red)"></div>
+    </div>
+  </header>
+
+  <!-- ── Research-mode banner ──────────────────────────────────────── -->
+  <div class="research-banner" id="research-banner">
+    <span class="dot"></span>
+    <span id="research-banner-text">RESEARCH MODE — all strategies non-tradable. Signals are being measured only.</span>
+  </div>
+
+  <!-- ── Body ──────────────────────────────────────────────────────── -->
+  <div id="body">
+
+    <!-- ── Sidebar ──────────────────────────────────────────────────── -->
+    <aside>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Strategy States</div>
+        <div id="strategy-states-sidebar" style="font-size:10px">
+          <div style="color:var(--muted)">Loading…</div>
+        </div>
+        <!-- Create Strategy hidden under research mode -->
+        <button id="create-btn" onclick="openModal()" style="display:none">+ Create Strategy</button>
+      </div>
+
+      <hr class="sidebar-divider"/>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Legacy Paper Performance</div>
+        <div class="stat-row"><span>Closed trades</span><strong id="s-total">0</strong></div>
+        <div class="stat-row"><span>Win rate</span><strong id="s-wr">—</strong></div>
+        <div class="stat-row"><span>Total PnL</span><strong id="s-pnl" class="stat-pnl">$0.00</strong></div>
+        <div class="stat-row"><span>Avg/trade</span><strong id="s-avg">—</strong></div>
+        <div class="stat-row"><span>Open pos.</span><strong id="s-open">0/0</strong></div>
+        <div class="stat-row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">
+          <span>Live trading</span><strong style="color:var(--muted)">BLOCKED</strong>
+        </div>
+      </div>
+
+      <hr class="sidebar-divider"/>
+
+      <div class="sidebar-section">
+        <div class="sidebar-label">Last update</div>
+        <div class="stat-row" style="flex-direction:column;gap:2px">
+          <span id="last-ts" style="color:var(--muted);font-size:9px">—</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Main ─────────────────────────────────────────────────────── -->
+    <main>
+      <!-- Hot token strip -->
+      <div class="hot-strip" id="hot-strip">
+        <span style="color:var(--muted);font-size:10px;align-self:center">No hot tokens yet</span>
+      </div>
+
+      <!-- Tabs — research-mode tabs first, legacy tabs after -->
+      <div class="tabs">
+        <div class="tab active" onclick="setTab('health')"    id="tab-health">Research Health</div>
+        <div class="tab"        onclick="setTab('outcomes')"  id="tab-outcomes">Signal Outcomes</div>
+        <div class="tab"        onclick="setTab('pending')"   id="tab-pending">Pending Checks</div>
+        <div class="tab"        onclick="setTab('signals')"   id="tab-signals">Signals</div>
+        <div class="tab"        onclick="setTab('positions')" id="tab-positions">Positions</div>
+        <div class="tab"        onclick="setTab('zombies')"   id="tab-zombies">Watchlist</div>
+        <div class="tab"        onclick="setTab('wallets')"   id="tab-wallets">Wallets</div>
+        <div class="tab"        onclick="setTab('history')"   id="tab-history">Trade History</div>
+      </div>
+
+      <!-- Content -->
+      <div class="content" id="content">
+        <div class="empty-state">
+          <div class="icon">📡</div>
+          <p>Connecting to bot...</p>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ── Create Strategy Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h2>Create New Strategy</h2>
+    <p>Describe your strategy in plain English. The bot will parse and apply it.</p>
+
+    <label>Strategy Type</label>
+    <select id="strat-type">
+      <option value="wallet">Wallet Tracker</option>
+      <option value="zombie">Zombie Tracker</option>
+    </select>
+
+    <label>Description</label>
+    <textarea id="strat-desc" placeholder="e.g. Alert me when any token under $500k mcap has more than 5 smart traders buying in the last 10 minutes..."></textarea>
+
+    <div class="modal-example" id="strat-example">
+      e.g. "Alert me when any token under $500k mcap has more than 5 smart traders buying in the last 10 minutes"
+    </div>
+
+    <div id="strat-result" class="strategy-result"></div>
+
+    <button class="btn-primary" onclick="submitStrategy()">CREATE STRATEGY</button>
+    <button class="btn-secondary" onclick="closeModal()">CLOSE</button>
+  </div>
+</div>
+
+<!-- ── Add Wallet Modal ──────────────────────────────────────────── -->
+<div class="modal-overlay" id="add-wallet-modal">
+  <div class="modal">
+    <h2>Add Smart Wallet</h2>
+    <p>Track a wallet's Solana swaps. The bot will fire a buy signal when several tracked wallets converge on the same token.</p>
+
+    <label>Wallet address (Solana pubkey)</label>
+    <input id="aw-address" type="text" placeholder="e.g. 9wFFNG6vRu...43 chars" />
+
+    <div class="modal-row">
+      <div>
+        <label>Chain</label>
+        <select id="aw-chain">
+          <option value="solana">Solana</option>
+          <option value="ethereum">Ethereum (not polled yet)</option>
+          <option value="bsc">BSC (not polled yet)</option>
+          <option value="base">Base (not polled yet)</option>
+        </select>
+      </div>
+      <div>
+        <label>Win rate (0–1, optional)</label>
+        <input id="aw-winrate" type="number" min="0" max="1" step="0.01" placeholder="0.72" />
+      </div>
+    </div>
+
+    <label>Notes (optional)</label>
+    <input id="aw-notes" type="text" placeholder="Why this wallet — sniper, early SOL, etc." />
+
+    <div id="aw-result" class="strategy-result"></div>
+
+    <button class="btn-primary" onclick="submitAddWallet()">ADD WALLET</button>
+    <button class="btn-secondary" onclick="closeAddWalletModal()">CLOSE</button>
+  </div>
+</div>
+
+<!-- ── Add Zombie Modal ──────────────────────────────────────────── -->
+<div class="modal-overlay" id="add-zombie-modal">
+  <div class="modal">
+    <h2>Add Zombie Candidate</h2>
+    <p>Add a dormant token to the watchlist. The bot will fire a signal if it shows a volume + price revival.</p>
+
+    <label>Token mint address</label>
+    <input id="az-address" type="text" placeholder="e.g. 7vfCXTUXx5...Solana mint" />
+
+    <div class="modal-row">
+      <div>
+        <label>Chain</label>
+        <select id="az-chain">
+          <option value="solana">Solana</option>
+          <option value="ethereum">Ethereum</option>
+          <option value="bsc">BSC</option>
+          <option value="base">Base</option>
+        </select>
+      </div>
+      <div>
+        <label>Symbol (optional)</label>
+        <input id="az-symbol" type="text" placeholder="DOGE" />
+      </div>
+    </div>
+
+    <label>Display name (optional)</label>
+    <input id="az-name" type="text" placeholder="Doge Coin" />
+
+    <div id="az-result" class="strategy-result"></div>
+
+    <button class="btn-primary" onclick="submitAddZombie()">ADD TOKEN</button>
+    <button class="btn-secondary" onclick="closeAddZombieModal()">CLOSE</button>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+let state           = {};
+let activeTab       = 'health';
+let outcomeSource   = 'live';   // 'live' | 'backfill' | 'all'
+let ws              = null;
+let wsRetries       = 0;
+let cachedOpsHealth = null;
+let cachedHealth    = [];
+let cachedOutcomes  = [];
+let cachedPending   = [];
+
+// ── WebSocket ──────────────────────────────────────────────────────────
+function connectWS() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onopen = () => {
+    wsRetries = 0;
+    document.getElementById('ws-dot').style.cssText =
+      'background:var(--green);box-shadow:0 0 6px var(--green)';
+  };
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.ts) {
+      applySnapshot(data);
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('ws-dot').style.cssText =
+      'background:var(--red);box-shadow:0 0 6px var(--red)';
+    const delay = Math.min(30000, 1000 * Math.pow(2, wsRetries++));
+    setTimeout(connectWS, delay);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// ── Apply snapshot ─────────────────────────────────────────────────────
+function applySnapshot(data) {
+  state = data;
+
+  // Header
+  document.getElementById('mode-badge').className =
+    'mode-badge ' + (data.paper_trading ? 'mode-paper' : 'mode-live');
+  document.getElementById('mode-badge').textContent =
+    data.paper_trading ? 'PAPER' : '⚡ LIVE';
+
+  // Sidebar — strategy states (replaces ON/OFF cards)
+  renderStrategyStatesSidebar(data.strategy_states || {});
+
+  // Update top banner if any strategy is unexpectedly tradable
+  updateResearchBanner(data.strategy_states || {});
+
+  // Cache the inline strategy_health if the snapshot included it
+  if (Array.isArray(data.strategy_health)) {
+    cachedHealth = data.strategy_health;
+  }
+
+  // Sidebar — stats (legacy)
+  const s = data.stats || {};
+  document.getElementById('s-total').textContent = s.total_trades ?? 0;
+  document.getElementById('s-wr').textContent    = s.total_trades > 0 ? s.win_rate + '%' : '—';
+  const pnlEl = document.getElementById('s-pnl');
+  const pnl = s.total_pnl_usd ?? 0;
+  pnlEl.textContent  = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+  pnlEl.className    = 'stat-pnl' + (pnl < 0 ? ' neg' : '');
+  document.getElementById('s-avg').textContent  = s.avg_pnl_pct != null ? s.avg_pnl_pct + '%' : '—';
+  document.getElementById('s-open').textContent = `${s.open_positions ?? 0}/${s.max_positions ?? 0}`;
+
+  // Timestamp
+  document.getElementById('last-ts').textContent =
+    new Date(data.ts + 'Z').toLocaleTimeString();
+
+  // Hot strip
+  renderHotStrip(data.hot_tokens || []);
+
+  // Render active tab
+  renderTab(activeTab);
+}
+
+// ── Hot token strip ────────────────────────────────────────────────────
+function renderHotStrip(tokens) {
+  const el = document.getElementById('hot-strip');
+  if (!tokens.length) {
+    el.innerHTML = '<span style="color:var(--muted);font-size:10px;align-self:center">No hot tokens yet</span>';
+    return;
+  }
+  el.innerHTML = tokens.map(t => `
+    <div class="hot-chip">
+      <span class="hw">${t.wallet_count}🔥</span>
+      <span>${t.token_symbol || t.token_address.slice(0,6) + '…'}</span>
+      <span style="color:var(--muted)">${chainBadge(t.chain)}</span>
+    </div>
+  `).join('');
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────
+function setTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab)?.classList.add('active');
+  renderTab(tab);
+}
+
+function renderTab(tab) {
+  const el = document.getElementById('content');
+  switch (tab) {
+    case 'health':    el.innerHTML = renderResearchHealth(); break;
+    case 'outcomes':  el.innerHTML = renderSignalOutcomes(); break;
+    case 'pending':   el.innerHTML = renderPendingChecks();  break;
+    case 'signals':   el.innerHTML = renderSignals(state.signals || []);   break;
+    case 'positions': el.innerHTML = renderPositions(state.positions || []); break;
+    case 'zombies':   el.innerHTML = renderZombies(state.zombies || []);   break;
+    case 'wallets':   el.innerHTML = renderWallets(state.wallets || []);   break;
+    case 'history':   el.innerHTML = renderHistory(state.recent_trades || []); break;
+  }
+}
+
+// ── Strategy states (sidebar) ──────────────────────────────────────────
+function renderStrategyStatesSidebar(states) {
+  const el = document.getElementById('strategy-states-sidebar');
+  if (!el) return;
+  const entries = Object.entries(states);
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:var(--muted)">No states yet</div>';
+    return;
+  }
+  el.innerHTML = entries.map(([name, info]) => {
+    const stateLower = (info.state || 'research').toLowerCase();
+    const canTradeCls = info.can_trade ? 'can-trade-yes' : 'can-trade-no';
+    const canTradeTxt = info.can_trade ? 'TRADABLE' : 'blocked';
+    const display = name.replace(/_/g, ' ');
+    return `
+      <div style="margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+          <span style="font-size:10px;font-weight:700;color:var(--text)">${display}</span>
+          <span class="state-badge state-${stateLower}">${info.state}</span>
+        </div>
+        <div class="${canTradeCls}" style="font-size:9px;letter-spacing:1px;text-transform:uppercase">
+          ${canTradeTxt}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Research-mode banner (alert if anything became tradable) ───────────
+function updateResearchBanner(states) {
+  const banner = document.getElementById('research-banner');
+  const text = document.getElementById('research-banner-text');
+  if (!banner || !text) return;
+  const tradable = Object.entries(states).filter(([, info]) => info.can_trade);
+  if (tradable.length > 0) {
+    banner.classList.add('alert');
+    text.textContent = `⚠ ALERT: ${tradable.length} strategy now TRADABLE — ${tradable.map(([n]) => n).join(', ')}. Verify intentional promotion.`;
+  } else {
+    banner.classList.remove('alert');
+    text.textContent = 'RESEARCH MODE — all strategies non-tradable. Signals are being measured only.';
+  }
+}
+
+// ── Tab: Research Health ───────────────────────────────────────────────
+function renderResearchHealth() {
+  const ops = cachedOpsHealth || {};
+  const opsCard = (label, value, opts = {}) => {
+    const alertCls = opts.alert ? 'ops-card alert' : 'ops-card';
+    const sub = opts.sub ? `<div class="sub">${opts.sub}</div>` : '';
+    return `<div class="${alertCls}"><div class="label">${label}</div>
+            <div class="value">${value}</div>${sub}</div>`;
+  };
+  const live = ops.live_outcomes ?? 0;
+  const back = ops.backfill_outcomes ?? 0;
+  const pend = ops.pending_checks ?? 0;
+  const over = ops.overdue_checks ?? 0;
+  const open = ops.open_positions ?? 0;
+  const trad = ops.tradable_strategies ?? 0;
+  const lastLive = ops.last_live_outcome_at ? fmtTs(ops.last_live_outcome_at) : '—';
+  const lastDone = ops.last_outcome_completed_at ? fmtTs(ops.last_outcome_completed_at) : '—';
+
+  const opsGrid = `
+    <div class="ops-grid">
+      ${opsCard('Mode', ops.mode || '—', { sub: ops.wallet_tracker_enabled ? 'wallet tracker on' : 'wallet tracker off' })}
+      ${opsCard('Tradable strategies', trad, { alert: trad > 0, sub: trad > 0 ? 'unexpected — verify promotion' : 'none promoted yet' })}
+      ${opsCard('Open positions', open, { alert: open > 0, sub: open > 0 ? 'state gate may have failed' : '' })}
+      ${opsCard('Live outcomes', live, { sub: lastLive !== '—' ? 'last: ' + lastLive : 'no live signals yet' })}
+      ${opsCard('Backfill outcomes', back, { sub: 'historical context only' })}
+      ${opsCard('Pending checks', pend, { sub: lastDone !== '—' ? 'last done: ' + lastDone : '—' })}
+      ${opsCard('Overdue checks', over, { alert: over > 0, sub: over > 0 ? 'background worker may be stuck' : '' })}
+    </div>`;
+
+  const healthRows = (cachedHealth || []).map(h => {
+    const r5  = fmtPct(h.avg_5m);
+    const r15 = fmtPct(h.avg_15m);
+    const r1h = fmtPct(h.avg_1h);
+    const r24 = fmtPct(h.avg_24h);
+    const route = h.route_rate != null ? (h.route_rate * 100).toFixed(0) + '%' : '—';
+    return `<tr>
+      <td><strong>${h.strategy}</strong></td>
+      <td>${h.signals ?? 0}</td>
+      <td>${route}</td>
+      <td>${r5}</td>
+      <td>${r15}</td>
+      <td>${r1h}</td>
+      <td>${r24}</td>
+    </tr>`;
+  }).join('');
+
+  const healthTable = `
+    <div class="section-h">Strategy Health (live signals only)</div>
+    ${cachedHealth.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>Strategy</th><th>Signals</th><th>Route rate</th>
+          <th>Avg 5m</th><th>Avg 15m</th><th>Avg 1h</th><th>Avg 24h</th>
+        </tr></thead>
+        <tbody>${healthRows}</tbody>
+      </table></div>`
+      : `<div style="color:var(--muted);font-size:11px;padding:12px;background:var(--surface2);border-radius:4px">
+           No live signal outcomes yet. Will populate as zombie signals fire and post-signal checks complete.
+         </div>`}`;
+
+  return opsGrid + healthTable;
+}
+
+// ── Tab: Signal Outcomes ───────────────────────────────────────────────
+function renderSignalOutcomes() {
+  const chip = (src, label) => {
+    const active = outcomeSource === src ? 'active' : '';
+    return `<span class="source-chip ${active}" onclick="setOutcomeSource('${src}')">${label}</span>`;
+  };
+  const filter = `<div class="source-filter">
+    ${chip('live', 'Live')}${chip('backfill', 'Backfill')}${chip('all', 'All')}
+  </div>`;
+
+  if (!cachedOutcomes.length) {
+    return filter + emptyState('🧪',
+      `No ${outcomeSource} outcomes yet.<br>` +
+      (outcomeSource === 'live' ? 'Will populate when the first zombie signal fires.' : ''));
+  }
+
+  const rows = cachedOutcomes.map(o => {
+    const sym = o.token_address.slice(0, 8);
+    const created = fmtTs(o.created_at);
+    const route = o.route_available_at_signal === 1 ? 'yes'
+                : o.route_available_at_signal === 0 ? 'no' : '—';
+    const sourcePill = o.source === 'live'
+      ? '<span class="state-badge state-paper">LIVE</span>'
+      : '<span class="state-badge state-paused">BACKFILL</span>';
+    const cells = ['price_5m', 'price_15m', 'price_1h', 'price_24h'].map(k => {
+      const cur = o[k];
+      if (cur == null) return '<td class="num flat">—</td>';
+      if (!o.price_at_signal || o.price_at_signal <= 0) return `<td class="num">${fmtPx(cur)}</td>`;
+      const ret = cur / o.price_at_signal - 1;
+      const cls = ret > 0 ? 'up' : ret < 0 ? 'down' : 'flat';
+      return `<td class="num ${cls}">${fmtPct(ret)}</td>`;
+    }).join('');
+    return `<tr>
+      <td>${sourcePill}</td>
+      <td><div class="token-cell">
+        <span class="token-sym">${sym}</span>
+        <span class="token-addr">${o.token_address.slice(0,12)}…</span>
+      </div></td>
+      <td>${chainBadgeEl(o.chain)}</td>
+      <td><strong>${o.strategy.replace(/_/g, ' ')}</strong></td>
+      <td class="num">${fmtPx(o.price_at_signal)}</td>
+      ${cells}
+      <td>${route}</td>
+      <td class="ts">${created}</td>
+    </tr>`;
+  }).join('');
+
+  return filter + `
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Source</th><th>Token</th><th>Chain</th><th>Strategy</th>
+        <th>Price @ signal</th><th>5m Δ</th><th>15m Δ</th><th>1h Δ</th><th>24h Δ</th>
+        <th>Route</th><th>Created</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+function setOutcomeSource(src) {
+  outcomeSource = src;
+  fetchOutcomes().then(() => {
+    if (activeTab === 'outcomes') renderTab('outcomes');
+  });
+}
+
+// ── Tab: Pending Checks ────────────────────────────────────────────────
+function renderPendingChecks() {
+  if (!cachedPending.length) {
+    return emptyState('⏱', 'No pending price checks. Either no live signals have fired, or all enqueued checks have completed.');
+  }
+  const now = Date.now();
+  const rows = cachedPending.map(c => {
+    const due = new Date(c.due_at + 'Z').getTime();
+    const overdueMins = (now - due) / 60000;
+    const overdue = overdueMins > 10;
+    const rowCls = overdue ? 'style="background:rgba(239,68,68,0.05)"' : '';
+    const statusCell = overdue
+      ? `<span class="state-badge state-live">OVERDUE ${Math.round(overdueMins)}m</span>`
+      : `<span class="state-badge state-research">${c.status.toUpperCase()}</span>`;
+    return `<tr ${rowCls}>
+      <td><div class="token-cell">
+        <span class="token-sym">${c.token_address.slice(0,8)}</span>
+        <span class="token-addr">${c.token_address.slice(0,12)}…</span>
+      </div></td>
+      <td>${chainBadgeEl(c.chain)}</td>
+      <td><strong>${c.check_type}</strong></td>
+      <td class="ts">${fmtTs(c.due_at)}</td>
+      <td>${statusCell}</td>
+      <td class="ts">${c.completed_at ? fmtTs(c.completed_at) : '—'}</td>
+      <td style="color:var(--muted);font-size:9px">${c.error || '—'}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Token</th><th>Chain</th><th>Check</th>
+        <th>Due at</th><th>Status</th><th>Completed</th><th>Error</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+// ── Fetch helpers for the research-mode endpoints ──────────────────────
+async function fetchOpsHealth() {
+  try {
+    const r = await fetch('/api/ops_health');
+    if (r.ok) cachedOpsHealth = await r.json();
+  } catch (_) {}
+}
+async function fetchStrategyHealth() {
+  try {
+    const r = await fetch('/api/strategy_health?source=live');
+    if (r.ok) cachedHealth = await r.json();
+  } catch (_) {}
+}
+async function fetchOutcomes() {
+  try {
+    const r = await fetch(`/api/signal_outcomes?source=${outcomeSource}&limit=50`);
+    if (r.ok) cachedOutcomes = await r.json();
+  } catch (_) {}
+}
+async function fetchPending() {
+  try {
+    const r = await fetch('/api/pending_price_checks?limit=100');
+    if (r.ok) cachedPending = await r.json();
+  } catch (_) {}
+}
+
+async function refreshResearchData() {
+  await Promise.all([fetchOpsHealth(), fetchStrategyHealth(), fetchOutcomes(), fetchPending()]);
+  if (['health', 'outcomes', 'pending'].includes(activeTab)) renderTab(activeTab);
+}
+
+// ── Formatting helpers ─────────────────────────────────────────────────
+function fmtPct(v) {
+  if (v == null || isNaN(v)) return '—';
+  const pct = v * 100;
+  const sign = pct > 0 ? '+' : '';
+  return sign + pct.toFixed(1) + '%';
+}
+function fmtPx(v) {
+  if (v == null || v === 0) return '—';
+  if (v < 0.0001) return v.toExponential(2);
+  return v.toFixed(8).replace(/0+$/, '').replace(/\.$/, '');
+}
+function fmtTs(s) {
+  if (!s) return '—';
+  try {
+    const d = new Date(s.includes('Z') ? s : s + 'Z');
+    return d.toLocaleString(undefined, {
+      month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) { return s; }
+}
+
+// ── Render: Signals ────────────────────────────────────────────────────
+function renderSignals(signals) {
+  if (!signals.length) return emptyState('📡', 'No signals yet. Bot is watching...');
+  return `
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Token</th><th>Chain</th><th>Type</th>
+          <th>Confidence</th><th>Trigger</th><th>Status</th><th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${signals.map(s => {
+          const conf   = s.confidence ?? 50;
+          const cfCls  = conf >= 75 ? 'conf-high' : conf >= 50 ? 'conf-med' : 'conf-low';
+          const sym    = s.token_symbol || s.token_address.slice(0,8);
+          const addr   = s.token_address.slice(0,12) + '…';
+          const ts     = new Date(s.created_at + 'Z').toLocaleTimeString();
+          const status = s.acted ? 'status-open' : 'status-new';
+          const statusTxt = s.acted ? 'TRADED' : 'NEW';
+          return `
+          <tr class="${s._new ? 'flash' : ''}">
+            <td>
+              <div class="token-cell">
+                <span class="token-sym">${sym}</span>
+                <span class="token-addr">${addr}</span>
+              </div>
+            </td>
+            <td>${chainBadgeEl(s.chain)}</td>
+            <td><span class="sig-type sig-${s.signal_type}">${s.signal_type.toUpperCase()}</span></td>
+            <td>
+              <div class="confidence-bar"><div class="confidence-fill ${cfCls}" style="width:${conf}%"></div></div>
+              ${conf}%
+            </td>
+            <td style="color:var(--text)">${s.trigger_count}</td>
+            <td><span class="status-pill ${status}">${statusTxt}</span></td>
+            <td class="ts">${ts}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+// ── Render: Positions ──────────────────────────────────────────────────
+function renderPositions(positions) {
+  if (!positions.length) return emptyState('💤', 'No open positions.<br>Signals will trigger entries automatically.');
+  return `
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Token</th><th>Chain</th><th>Entry</th>
+          <th>Size</th><th>Stop Loss</th><th>Take Profit</th><th>Opened</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${positions.map(p => {
+          const sym = p.token_symbol || p.token_address.slice(0,8);
+          const ts  = new Date(p.opened_at + 'Z').toLocaleTimeString();
+          return `
+          <tr>
+            <td><div class="token-cell">
+              <span class="token-sym">${sym}</span>
+              <span class="token-addr">${p.token_address.slice(0,12)}…</span>
+            </div></td>
+            <td>${chainBadgeEl(p.chain)}</td>
+            <td>$${p.entry_price_usd?.toFixed(6) ?? '—'}</td>
+            <td>${p.entry_amount_sol?.toFixed(3) ?? '—'} SOL</td>
+            <td style="color:var(--red)">$${p.stop_loss_usd?.toFixed(6) ?? '—'}</td>
+            <td style="color:var(--green)">$${p.take_profit_usd?.toFixed(6) ?? '—'}</td>
+            <td class="ts">${ts}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+// ── Render: Zombie Watchlist ───────────────────────────────────────────
+function renderZombies(zombies) {
+  const addBtn = `<div class="table-toolbar"><button class="btn-add" onclick="openAddZombieModal()">+ Add Token</button></div>`;
+  if (!zombies.length) return addBtn + emptyState('🧟', 'Zombie watchlist empty.<br>The bot will auto-populate it from trending tokens, or add one manually above.');
+  return addBtn + `
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Token</th><th>Chain</th><th>Avg Vol (dormant)</th>
+          <th>Dormant Since</th><th>Status</th><th>Added</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${zombies.map(z => {
+          const sym    = z.token_symbol || z.token_address.slice(0,8);
+          const dormant= z.dormant_since ? z.dormant_since.slice(0,10) : '—';
+          const added  = z.added_at ? z.added_at.slice(0,10) : '—';
+          const stCls  = z.status === 'triggered' ? 'status-triggered' : 'status-watching';
+          return `
+          <tr>
+            <td><div class="token-cell">
+              <span class="token-sym">${sym}</span>
+              <span class="token-addr">${z.token_address.slice(0,12)}…</span>
+            </div></td>
+            <td>${chainBadgeEl(z.chain)}</td>
+            <td>$${(z.peak_volume_usd ?? 0).toFixed(0)}/day</td>
+            <td class="ts">${dormant}</td>
+            <td><span class="status-pill ${stCls}">${z.status.toUpperCase()}</span></td>
+            <td class="ts">${added}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+// ── Render: Wallets ────────────────────────────────────────────────────
+function renderWallets(wallets) {
+  const addBtn = `<div class="table-toolbar"><button class="btn-add" onclick="openAddWalletModal()">+ Add Wallet</button></div>`;
+  if (!wallets.length) return addBtn + emptyState('👛', 'No wallets tracked yet.<br>Click <strong>+ Add Wallet</strong> above to start tracking.');
+  return addBtn + `
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Address</th><th>Chain</th><th>Win Rate</th>
+          <th>Trades</th><th>Notes</th><th>Last Seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${wallets.map(w => {
+          const wr  = w.win_rate > 0 ? (w.win_rate * 100).toFixed(0) + '%' : '—';
+          const wrCls = w.win_rate >= 0.7 ? 'color:var(--green)' : w.win_rate >= 0.5 ? 'color:var(--orange)' : 'color:var(--muted)';
+          const seen = w.last_seen ? new Date(w.last_seen + 'Z').toLocaleString() : '—';
+          return `
+          <tr>
+            <td><div class="token-cell">
+              <span class="token-sym" style="font-size:10px">${w.address.slice(0,16)}…</span>
+            </div></td>
+            <td>${chainBadgeEl(w.chain)}</td>
+            <td><strong style="${wrCls}">${wr}</strong></td>
+            <td>${w.trade_count ?? 0}</td>
+            <td style="color:var(--muted)">${w.notes || '—'}</td>
+            <td class="ts">${seen}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+// ── Render: Trade History ──────────────────────────────────────────────
+function renderHistory(trades) {
+  if (!trades.length) return emptyState('📊', 'No completed trades yet.');
+  return `
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Token</th><th>Chain</th><th>Entry</th>
+          <th>Exit</th><th>PnL</th><th>Exit Reason</th><th>Closed</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${trades.map(t => {
+          const pnl    = t.pnl_pct ?? 0;
+          const pnlCls = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'flat';
+          const pnlTxt = (pnl > 0 ? '+' : '') + pnl.toFixed(1) + '%';
+          const ts     = t.closed_at ? new Date(t.closed_at + 'Z').toLocaleString() : '—';
+          return `
+          <tr>
+            <td>${t.token_symbol || t.token_address?.slice(0,8)}</td>
+            <td>${chainBadgeEl(t.chain)}</td>
+            <td>$${t.entry_price_usd?.toFixed(6) ?? '—'}</td>
+            <td>$${t.exit_price_usd?.toFixed(6) ?? '—'}</td>
+            <td><span class="pnl ${pnlCls}">${pnlTxt}</span></td>
+            <td class="ts">${(t.exit_reason || '—').replace('_',' ').toUpperCase()}</td>
+            <td class="ts">${ts}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>`;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+function chainBadgeEl(chain) {
+  return `<span class="chain-badge chain-${chain || 'solana'}">${(chain || 'SOL').toUpperCase().slice(0,3)}</span>`;
+}
+function chainBadge(chain) {
+  return (chain || 'SOL').toUpperCase().slice(0,3);
+}
+function emptyState(icon, msg) {
+  return `<div class="empty-state"><div class="icon">${icon}</div><p>${msg}</p></div>`;
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────
+function openModal() {
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  document.getElementById('strat-result').style.display = 'none';
+}
+document.getElementById('modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modal')) closeModal();
+});
+
+document.getElementById('strat-type').addEventListener('change', function() {
+  const ex = document.getElementById('strat-example');
+  if (this.value === 'wallet') {
+    ex.textContent = 'e.g. "Alert me when any token under $500k mcap has more than 5 smart traders buying in the last 10 minutes"';
+  } else {
+    ex.textContent = 'e.g. "Reviving token that was dormant for 14 days with 5x volume spike and 20% price pump"';
+  }
+});
+
+// ── Add Wallet / Add Zombie modals ────────────────────────────────────
+function openAddWalletModal() {
+  document.getElementById('aw-result').style.display = 'none';
+  document.getElementById('aw-address').value = '';
+  document.getElementById('aw-winrate').value = '';
+  document.getElementById('aw-notes').value = '';
+  document.getElementById('add-wallet-modal').classList.add('open');
+}
+function closeAddWalletModal() {
+  document.getElementById('add-wallet-modal').classList.remove('open');
+}
+function openAddZombieModal() {
+  document.getElementById('az-result').style.display = 'none';
+  document.getElementById('az-address').value = '';
+  document.getElementById('az-symbol').value = '';
+  document.getElementById('az-name').value = '';
+  document.getElementById('add-zombie-modal').classList.add('open');
+}
+function closeAddZombieModal() {
+  document.getElementById('add-zombie-modal').classList.remove('open');
+}
+document.getElementById('add-wallet-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('add-wallet-modal')) closeAddWalletModal();
+});
+document.getElementById('add-zombie-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('add-zombie-modal')) closeAddZombieModal();
+});
+
+async function submitAddWallet() {
+  const address  = document.getElementById('aw-address').value.trim();
+  const chain    = document.getElementById('aw-chain').value;
+  const winRate  = parseFloat(document.getElementById('aw-winrate').value) || 0;
+  const notes    = document.getElementById('aw-notes').value.trim();
+  const resultEl = document.getElementById('aw-result');
+  resultEl.style.display = 'none';
+
+  if (!address) {
+    resultEl.style.display = 'block';
+    resultEl.textContent = '✗ Address is required.';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/wallets/add', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ address, chain, win_rate: winRate, notes }),
+    });
+    const data = await res.json();
+    resultEl.style.display = 'block';
+    if (res.ok) {
+      resultEl.textContent = `✓ Wallet added: ${data.address.slice(0,12)}…`;
+      // Refresh snapshot so the new wallet appears in the table
+      const snap = await fetch('/api/snapshot');
+      applySnapshot(await snap.json());
+      setTimeout(closeAddWalletModal, 800);
+    } else {
+      resultEl.textContent = `✗ ${data.detail || 'Failed to add wallet'}`;
+    }
+  } catch (e) {
+    resultEl.style.display = 'block';
+    resultEl.textContent = `✗ Request failed: ${e.message}`;
+  }
+}
+
+async function submitAddZombie() {
+  const tokenAddress = document.getElementById('az-address').value.trim();
+  const chain        = document.getElementById('az-chain').value;
+  const symbol       = document.getElementById('az-symbol').value.trim();
+  const name         = document.getElementById('az-name').value.trim();
+  const resultEl     = document.getElementById('az-result');
+  resultEl.style.display = 'none';
+
+  if (!tokenAddress) {
+    resultEl.style.display = 'block';
+    resultEl.textContent = '✗ Token address is required.';
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/zombies/add', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chain, token_address: tokenAddress,
+        token_symbol: symbol, name, peak_volume_usd: 0,
+      }),
+    });
+    const data = await res.json();
+    resultEl.style.display = 'block';
+    if (res.ok) {
+      resultEl.textContent = `✓ Token added: ${(symbol || tokenAddress.slice(0,12) + '…')}`;
+      const snap = await fetch('/api/snapshot');
+      applySnapshot(await snap.json());
+      setTimeout(closeAddZombieModal, 800);
+    } else {
+      resultEl.textContent = `✗ ${data.detail || 'Failed to add token'}`;
+    }
+  } catch (e) {
+    resultEl.style.display = 'block';
+    resultEl.textContent = `✗ Request failed: ${e.message}`;
+  }
+}
+
+async function submitStrategy() {
+  const desc = document.getElementById('strat-desc').value.trim();
+  const type = document.getElementById('strat-type').value;
+  if (!desc) return;
+
+  const res  = await fetch('/api/strategy/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ description: desc, strategy_type: type })
+  });
+  const data = await res.json();
+  const el   = document.getElementById('strat-result');
+  el.style.display = 'block';
+
+  const params = data.params || {};
+  const lines  = Object.entries(params).map(([k,v]) => `  ${k}: ${v}`).join('\n');
+  el.textContent = lines.length
+    ? `✓ Strategy parsed:\n${lines}\n\nApply in config.py to activate.`
+    : '✓ Strategy noted. No numeric params detected — refine your description.';
+}
+
+// ── Theme toggle ───────────────────────────────────────────────────────
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = theme === 'dark' ? '☾' : '☀';
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  try { localStorage.setItem('tradebot-theme', next); } catch(_) {}
+}
+applyTheme(localStorage.getItem('tradebot-theme') || 'dark');
+
+// ── Init ───────────────────────────────────────────────────────────────
+connectWS();
+
+// Snapshot REST fallback (every 10s if WS is down)
+setInterval(async () => {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  try {
+    const r = await fetch('/api/snapshot');
+    applySnapshot(await r.json());
+  } catch(_) {}
+}, 10000);
+
+// Research-mode data refresh: ops_health + strategy_health + outcomes +
+// pending checks every 30s. These endpoints are independent of the WS feed
+// and are the source of truth for the Research Health / Outcomes / Pending tabs.
+refreshResearchData();
+setInterval(refreshResearchData, 30000);
+</script>
+</body>
+</html>
