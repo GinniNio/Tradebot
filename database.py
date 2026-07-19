@@ -130,6 +130,8 @@ CREATE TABLE IF NOT EXISTS signal_outcomes (
     price_15m                   REAL,
     price_1h                    REAL,
     price_24h                   REAL,
+    price_3d                    REAL,
+    price_7d                    REAL,
     route_available_at_signal   INTEGER,
     source                      TEXT    NOT NULL DEFAULT 'live',
     -- Default applies only on fresh installs; existing rows are set by code via _now().
@@ -191,6 +193,8 @@ def _apply_migrations(conn):
         ("open_positions",  "entry_token_amount", "INTEGER"),
         ("open_positions",  "signal_type",        "TEXT"),
         ("trade_history",   "entry_token_amount", "INTEGER"),
+        ("signal_outcomes", "price_3d",           "REAL"),
+        ("signal_outcomes", "price_7d",           "REAL"),
         # ─── Phase 1 of options-portfolio rebuild ──────────────────────────
         # strategy_tag distinguishes v1-momentum-baseline (legacy) from v2-options
         # (the rebuild) and any future variants. SQLite applies the DEFAULT to
@@ -222,7 +226,7 @@ def _apply_migrations(conn):
 
 def _migrate_signals_check_constraint(conn):
     """
-    Expand signals.signal_type CHECK constraint to include 'launch'.
+    Expand signals.signal_type CHECK constraint to include research feeds.
 
     SQLite does not support ALTER TABLE ... MODIFY CONSTRAINT, so this
     recreates the table. The migration is idempotent: it reads the current
@@ -238,7 +242,7 @@ def _migrate_signals_check_constraint(conn):
     ).fetchone()
     if not row:
         return  # signals not yet created; SCHEMA will create it with the right CHECK
-    if "'launch'" in row[0]:
+    if "'launch'" in row[0] and "'swing'" in row[0]:
         return  # already migrated
 
     logger.info("Migration: expanding signals.signal_type CHECK to include 'launch'...")
@@ -248,7 +252,7 @@ def _migrate_signals_check_constraint(conn):
         PRAGMA foreign_keys=OFF;
         CREATE TABLE IF NOT EXISTS signals_new (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            signal_type   TEXT    NOT NULL CHECK(signal_type IN ('wallet', 'zombie', 'launch')),
+            signal_type   TEXT    NOT NULL CHECK(signal_type IN ('wallet', 'zombie', 'launch', 'swing')),
             chain         TEXT    NOT NULL,
             token_address TEXT    NOT NULL,
             token_symbol  TEXT,
@@ -396,6 +400,19 @@ def get_recent_launch_signal(token_address: str, within_hours: int = 2) -> bool:
         return row is not None
 
 
+def get_recent_signal(token_address: str, signal_type: str, within_hours: int) -> bool:
+    """Whether this feed recently surfaced a token."""
+    from datetime import timedelta
+    cutoff = (datetime.utcnow() - timedelta(hours=within_hours)).isoformat()
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT id FROM signals WHERE token_address = ? AND signal_type = ?
+               AND created_at >= ? LIMIT 1""",
+            (token_address, signal_type, cutoff),
+        ).fetchone()
+        return row is not None
+
+
 def get_pending_signals() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -526,7 +543,7 @@ def update_zombie_status(token_address: str, status: str):
 
 # ─── Signal outcome helpers (Phase 3) ──────────────────────────────────────────
 
-VALID_CHECK_TYPES = ("price_5m", "price_15m", "price_1h", "price_24h")
+VALID_CHECK_TYPES = ("price_5m", "price_15m", "price_1h", "price_24h", "price_3d", "price_7d")
 
 
 def insert_signal_outcome(signal_id: int, strategy: str, token_address: str,
@@ -620,6 +637,7 @@ def get_signal_outcomes_list(source: "str | None" = None, limit: int = 50) -> li
     """
     q = """SELECT id, signal_id, strategy, token_address, chain,
                   price_at_signal, price_5m, price_15m, price_1h, price_24h,
+                  price_3d, price_7d,
                   route_available_at_signal, source, created_at
            FROM signal_outcomes"""
     params: tuple = ()
@@ -710,6 +728,10 @@ def signal_outcomes_summary(source: str = "live") -> list[dict]:
                        THEN price_1h  / price_at_signal - 1.0 END) as avg_1h,
                   AVG(CASE WHEN price_24h IS NOT NULL AND price_at_signal > 0
                        THEN price_24h / price_at_signal - 1.0 END) as avg_24h
+                 ,AVG(CASE WHEN price_3d IS NOT NULL AND price_at_signal > 0
+                       THEN price_3d / price_at_signal - 1.0 END) as avg_3d
+                 ,AVG(CASE WHEN price_7d IS NOT NULL AND price_at_signal > 0
+                       THEN price_7d / price_at_signal - 1.0 END) as avg_7d
                FROM signal_outcomes
                WHERE source = ?
                  AND price_at_signal IS NOT NULL
