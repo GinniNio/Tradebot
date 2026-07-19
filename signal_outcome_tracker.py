@@ -45,6 +45,8 @@ CHECK_SCHEDULE = [
     ("price_15m", timedelta(minutes=15)),
     ("price_1h",  timedelta(hours=1)),
     ("price_24h", timedelta(hours=24)),
+    ("price_3d",  timedelta(days=3)),
+    ("price_7d",  timedelta(days=7)),
 ]
 
 
