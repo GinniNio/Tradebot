@@ -24,6 +24,7 @@ from database import init_db, get_open_positions, close_position, open_position,
 from wallet_tracker import WalletTracker
 from zombie_tracker import ZombieTracker
 from graduation_tracker import GraduationTracker
+from swing_tracker import SwingTracker
 from jupiter_client import JupiterClient
 from risk_manager import RiskManager
 from dexscreener_client import DexscreenerClient
@@ -33,6 +34,7 @@ from config import (
     WALLET_POLL_INTERVAL_SEC, ZOMBIE_POLL_INTERVAL_SEC,
     WALLET_TRACKER_ENABLED,
     LAUNCH_TRACKER_ENABLED,
+    SWING_TRACKER_ENABLED,
 )
 
 # SOL/USD price cache — refreshed every SOL_PRICE_CACHE_SEC
@@ -59,6 +61,7 @@ class Tradebot:
         self.wallet_tracker = WalletTracker(on_signal=self.handle_signal)
         self.zombie_tracker = ZombieTracker(on_signal=self.handle_signal)
         self.graduation_tracker = GraduationTracker(on_signal=self.handle_signal)
+        self.swing_tracker = SwingTracker(on_signal=self.handle_signal)
         self._running = False
         self._sol_price_cache: tuple[float, float] = (0.0, 150.0)  # (timestamp, price)
 
@@ -322,6 +325,10 @@ class Tradebot:
             logger.warning(
                 "GraduationTracker DISABLED via LAUNCH_TRACKER_ENABLED=False."
             )
+        if SWING_TRACKER_ENABLED:
+            self._tasks.append(
+                asyncio.create_task(self.swing_tracker.start(), name="swing_tracker")
+            )
         try:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         except asyncio.CancelledError:
@@ -333,6 +340,7 @@ class Tradebot:
         self.wallet_tracker.stop()
         self.zombie_tracker.stop()
         self.graduation_tracker.stop()
+        self.swing_tracker.stop()
         # Cancel running tasks so sleep() calls return immediately
         for t in getattr(self, "_tasks", []):
             if not t.done():
