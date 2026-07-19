@@ -186,6 +186,7 @@ STRATEGY_STATES = {
     "zombie_revival_v2":  "RESEARCH",
     "wallet_convergence": "PAUSED",     # Helius credits exhausted until 2026-06-20; bot-contaminated universe
     "launch_momentum":    "RESEARCH",   # Not built yet
+    "swing_quality":      "RESEARCH",   # 3-7 day liquid-token selector
     "route_arbitrage":    "RESEARCH",   # Spread persistence must be measured before paper trading
     "ai_agent_attention": "BACKLOG",    # Idea only, no code path
 }
@@ -200,6 +201,7 @@ SIGNAL_TYPE_TO_STRATEGY = {
     "zombie_v2": "zombie_revival_v2",  # v2 selector — fires when v2 filter passes (see zombie_tracker)
     "wallet":    "wallet_convergence",
     "launch":    "launch_momentum",
+    "swing":     "swing_quality",
     "arb":       "route_arbitrage",
 }
 
@@ -253,6 +255,20 @@ LAUNCH_MAX_AGE_MINUTES     = 15       # reject graduates older than this at sign
 LAUNCH_MIN_LIQUIDITY_USD   = 15_000   # must have real liquidity post-graduation
 LAUNCH_MAX_MARKET_CAP_USD  = 500_000  # reject tokens that already ran (>7x from grad)
 LAUNCH_MIN_VOLUME_USD      = 2_000    # minimum 1h volume — filters zero-interest listings
+
+# ─── One-week swing candidate scanner ─────────────────────────────────────────
+# Discovery feeds are only a bounded universe. This strategy is research-only.
+SWING_TRACKER_ENABLED       = os.getenv("SWING_TRACKER_ENABLED", "True").strip().lower() == "true"
+SWING_POLL_INTERVAL_SEC     = 900
+SWING_MIN_LIQUIDITY_USD     = 50_000
+SWING_MIN_VOLUME_24H_USD    = 100_000
+SWING_MIN_MARKET_CAP_USD    = 250_000
+SWING_MAX_MARKET_CAP_USD    = 25_000_000
+SWING_MIN_PRICE_CHANGE_24H  = 5.0
+SWING_MAX_PRICE_CHANGE_24H  = 120.0
+SWING_MAX_PRICE_CHANGE_1H   = 25.0
+SWING_MIN_SCORE             = 65.0
+SWING_SIGNAL_COOLDOWN_HOURS = 24
 
 # ─── Chains for multi-chain Dexscreener monitoring ─────────────────────────────
 MONITORED_CHAINS = [
