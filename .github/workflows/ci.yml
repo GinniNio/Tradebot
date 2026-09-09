@@ -20,7 +20,7 @@ jobs:
       - name: Lint managed package
         run: ruff check tradebot tests
       - name: Run credential-free tests
-        run: pytest -m "not postgres"
+        run: python -m pytest -m "not postgres"
 
   postgres-migrations:
     runs-on: ubuntu-latest
