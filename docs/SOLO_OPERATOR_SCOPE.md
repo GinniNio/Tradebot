@@ -1,75 +1,147 @@
-# Tradebot: Solo Operator Scope
+# Tradebot Rebuild Scope & Mission
 
-## Purpose
+## Mission
 
-Tradebot is a Solana candidate-intelligence system. It scans the market, gathers attributable evidence, measures outcomes and presents a short ranked list for one operator to review.
+Tradebot is an asynchronous Solana opportunity-research pipeline for one operator. It scans, scrapes, analyses, researches and ranks candidates, then presents clear picks for human review.
 
-It does not claim to predict profit and it does not autonomously trade real money.
+It is not a latency-dependent execution bot. It abandons minute-one launch sniping and does not use arbitrage smart-contract templates or copied auto-trading bots. Strategies start as verifiable hypotheses, such as post-catalyst continuation or independent wallet convergence. Each hypothesis is measured objectively before it earns a change in state.
 
-## Operating loop
+A valid outcome is a shortlist, a watchlist or no pick. The system does not claim to predict profit.
 
-1. **Scan**: capture new and changing Solana candidates from managed data feeds. A discovery event puts a token in a short-lived watch queue; it is never a buy signal.
-2. **Check**: confirm pair, liquidity, turnover, price behaviour, age and current Jupiter buy-and-sell quotes at the research size. Reject a token when an exit cannot be quoted.
-3. **Research**: collect only attributable evidence: official links, project releases, verified announcements, on-chain activity and wallet behaviour. Each fact retains its source, source time and fetch time.
-4. **Rank**: create an explainable candidate card with market state, hard-reject flags, evidence, invalidation conditions and comparable past observations. Output up to five candidates, or none.
-5. **Pick**: the operator accepts, rejects or watches a candidate. The decision and reason are stored. A pick creates a shadow position only.
-6. **Learn**: reprice accepted, rejected and watched candidates on the same schedule. Compare cohorts using net executable quotes before changing a rule.
+## Product boundary
 
-## Explicit exclusions
+### In scope
+
+- Solana candidates with a liquid, observable secondary market.
+- Market discovery, structured project/context research, wallet and deployer analysis, security checks and route-based exitability checks.
+- Explainable ranked candidate cards and stored operator decisions.
+- Shadow positions and outcome research using executable buy and sell quotes.
+- A future supervised promotion path governed by the existing state machine.
+
+### Out of scope
 
 - First-seconds launch sniping, MEV, Jito/Shredstream competition and latency races.
-- Automatic copy trading or automatic real-money execution.
+- Automatic copy trading, automatic real-money execution or autonomous position management.
 - Direct pool-contract swaps as the default path.
 - CEX market making, arbitrage contracts and custody of other people's funds.
 - Broad web crawling, untraceable sentiment scores or social-post-driven buys.
-- Multi-chain expansion before Solana research has shown a repeatable result.
+- Multi-chain expansion before the Solana research loop has shown a repeatable result.
 
-## Minimal infrastructure
+## Minimal infrastructure architecture
 
 | Service | Responsibility |
 |---|---|
-| GitHub | Source control, pull-request review, CI and release history. |
-| Render | One single-instance Python service containing the API, dashboard and scheduled research loop. A database lease prevents concurrent scanners. |
-| Neon Postgres | Operational data: raw source events, market snapshots, evidence, decisions, shadow quotes and outcome checks. |
-| Dexscreener | Broad discovery and market validation. Use streaming updates where available and REST only to enrich queued tokens. |
-| Helius | Targeted Solana enrichment for the candidate and wallet watchlists. |
-| Jupiter | Read-only buy and sell quotes for tradability and shadow execution. Future execution remains disabled. |
-| Telegram | Operator alerts and concise candidate cards. It is not an execution authority. |
+| GitHub | Repository, pull-request review, Actions for linting, schema tests and Render deployment. No production secret enters the repository or Actions log. |
+| Neon Postgres | Durable source events, snapshots, evidence, decisions, shadow quotes and outcome checks. It replaces local SQLite because Render disk is not durable operational storage. |
+| Render | One single-instance FastAPI service: dashboard, API and asynchronous background loops. A Postgres scanner lease prevents overlap after a restart or deployment. |
+| Dexscreener | Broad candidate discovery and market validation. Streaming updates where available; REST only to enrich queued tokens. |
+| Helius | Targeted Solana enrichment for the small candidate and wallet watchlists. It is not a broad polling feed. |
+| Jupiter | Read-only bidirectional quotes for tradability and shadow execution. The execution adapter remains disabled in the initial build. |
+| Telegram | Candidate cards, health alerts and future supervised approval prompts. It is never a standalone execution authority. |
 
 No VPS fleet, self-hosted node, Kafka, Redis, MongoDB, Jito infrastructure or smart contract is required.
 
-## Data records
+## Pipeline mechanics
+
+### 1. Scan: fast discovery
+
+Monitor managed market feeds for candidates that meet the baseline `swing_quality` liquidity and sustained-volume rules. A discovery event creates a short-lived watch queue entry. It is never a buy signal.
+
+### 2. Scrape: contextual enrichment
+
+Collect token metadata, official links and attributable public evidence. Add a deployer-history module that links prior token launches, liquidity-removal behaviour and known negative signals where data supports them. Store raw sources and timestamps with every extracted fact.
+
+### 3. Analyse: safety and exitability
+
+For each queued candidate:
+
+- select the actual trading pair;
+- assess liquidity, turnover, price structure and holder concentration;
+- check mint and freeze authority where applicable;
+- evaluate deployer and wallet history;
+- request Jupiter buy and sell quotes at fixed research sizes, initially 0.5 SOL and 1 SOL;
+- record route, quoted output, price impact and failure reason;
+- hard-reject a candidate where a realistic exit cannot be quoted.
+
+### 4. Research: evidence and hypothesis
+
+Attach only evidence that can be reviewed: source URL or transaction, publisher, source time, fetch time, classification and claim. A project announcement can support a hypothesis. It cannot override a failed safety or exitability check.
+
+### 5. Pick: decision card
+
+Send a concise Telegram and dashboard card for shortlisted candidates:
+
+| Field | Required content |
+|---|---|
+| Why now | Trigger, strategy version and supporting market changes |
+| Entry context | Selected pair, liquidity, volume and entry conditions |
+| Exitability | Bidirectional quote, route quality and price impact |
+| Safety | Authority, holder and deployer-history verdicts |
+| Evidence | Attributable links and independent confirmation count |
+| Invalidation | Conditions that make the thesis false or the position unsafe |
+| Operator action | Watch, shadow-pick or reject, with a stored reason |
+
+The shortlist contains at most five candidates. No forced picks.
+
+### 6. Learn: outcome research
+
+Reprice accepted, rejected and watched candidates on a common schedule. Review results using net executable quote returns, outcome completeness, median return, positive rate, downside and exit failures. Derived scores are versioned; raw inputs remain immutable.
+
+## Operational workflow
+
+### Boot
+
+Run `doctor` before scanning: database connection and migrations, provider credentials, feed freshness, scanner lease, dashboard health and alert delivery. A failed required check pauses scanning and raises one health alert.
+
+### During the day
+
+The operator sees alerts only for a new ranked candidate or a health failure. Research and decision records are written before a shadow position is opened.
+
+### Daily
+
+Review the shortlist, store a decision for each candidate and resolve failed outcome checks.
+
+### Weekly
+
+Review frozen strategy versions and complete cohorts. A weak cohort is stopped or revised under a new version. Its previous evidence remains unchanged.
+
+## State machine and capital controls
+
+The strategy states remain:
+
+`RESEARCH → PAPER → LIVE_CANDIDATE → LIVE`
+
+The first delivery permits `RESEARCH` only. It gathers data and creates shadow positions; it cannot sign or send a transaction.
+
+Any later `PAPER` or supervised live proposal must include:
+
+- a frozen selector and completed out-of-sample evidence;
+- database-backed daily-loss circuit breakers;
+- hard slippage caps validated against current Jupiter quotes;
+- an explicit maximum exposure and an independently tested global kill switch;
+- a dedicated low-balance wallet;
+- one-tap Telegram approval that shows the candidate card before signing;
+- automatic closure of unused Solana token accounts after an approved position exit, subject to account-state checks.
+
+Real-money execution is a separate approval and implementation decision.
+
+## Operational records
 
 | Record | Minimum contents |
 |---|---|
 | `source_event` | provider, raw payload, event and fetch timestamps, token and pair identifiers |
-| `market_snapshot` | selected pair, liquidity, volume, price changes and transaction counts |
-| `quote_snapshot` | buy and sell quote for a fixed research size, price impact, route and failure reason |
-| `evidence_item` | claim, source URL or transaction, publisher, source time, fetch time and classification |
-| `candidate_decision` | rank, reasons, hard-reject flags, operator action and notes |
-| `outcome_check` | scheduled quote-based value, completion state and error reason |
+| `market_snapshot` | pair, liquidity, volume, price changes and transaction counts |
+| `quote_snapshot` | buy and sell quote, price impact, route and failure reason |
+| `evidence_item` | claim, source URL or transaction, publisher, source and fetch times |
+| `candidate_decision` | rank, hard-reject flags, operator action and notes |
+| `outcome_check` | scheduled quote-based value, status and error reason |
+| `strategy_version` | immutable configuration and code/version reference used for the decision |
 
-Raw inputs are immutable. Derived scores carry a version so old results can be replayed against the rules that selected them.
+## Delivery sequence
 
-## Operator routine
-
-**Boot:** run `doctor`: database and migrations, provider credentials, feed freshness, scanner lease, dashboard health and alert delivery. A failed required check pauses scanning and sends one alert.
-
-**During the day:** review only cards that passed hard rejects. Silence is the default; alerts are for newly ranked candidates and failed health checks.
-
-**Daily:** record a decision for each shortlisted candidate and inspect failed outcome checks. No forced picks.
-
-**Weekly:** review frozen strategy versions and complete cohorts: median net quote return, positive rate, downside, exit failures and missing-data rate. Stop or version a weak selector; preserve the old evidence.
-
-## Promotion policy
-
-`RESEARCH` is the only permitted strategy state. A later paper-trading proposal requires a frozen selector, completed out-of-sample cohort, quote-based net performance, a defined loss cap and an operator-approved change request. Live trading is a separate product decision.
-
-## Build order
-
-1. Align the current database and documentation with this scope.
-2. Move operational data to Neon and deploy the single Render instance with a health endpoint and scanner lease.
-3. Add immutable event, quote and decision records.
-4. Replace the hand-built launch scanner with the watch queue and hard-reject pipeline.
-5. Add evidence cards and Telegram alerts.
-6. Build replay and cohort reporting before adding strategies.
+1. Move the operational schema to Neon and deploy the single Render instance with health endpoint, scanner lease and GitHub Actions checks.
+2. Add immutable source-event, market-snapshot, quote-snapshot and operator-decision records.
+3. Implement the deployer-history and safety/exitability modules.
+4. Replace the hand-built launch scanner with the managed watch queue and hard-reject pipeline.
+5. Add evidence cards, Telegram alerts and shadow picks.
+6. Build replay and cohort reporting before adding strategies or execution.
