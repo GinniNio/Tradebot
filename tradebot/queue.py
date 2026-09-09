@@ -7,7 +7,8 @@ CLAIM_DUE_OUTCOME_CHECKS_SQL = """
 WITH due AS (
     SELECT id
     FROM outcome_checks
-    WHERE status = 'pending' AND due_at <= now()
+    WHERE (status = 'pending' AND due_at <= now())
+       OR (status = 'retryable' AND due_at <= now())
     ORDER BY due_at
     LIMIT $1
     FOR UPDATE SKIP LOCKED
@@ -63,4 +64,22 @@ class ResearchQueue:
             """,
             check_id,
             error[:500],
+        )
+
+    async def retry_outcome_check(self, check_id: UUID, error_category: str) -> None:
+        await self.conn.execute(
+            "UPDATE outcome_checks SET status='retryable', error=$2, due_at=now() + interval '15 minutes' WHERE id=$1",
+            check_id,
+            error_category[:100],
+        )
+
+    async def complete_market_outcome(
+        self, check_id: UUID, market_snapshot_id: UUID, price_usd: str
+    ) -> None:
+        await self.conn.execute(
+            """UPDATE outcome_checks SET status='completed', completed_at=now(), market_snapshot_id=$2,
+            outcome_price_usd=$3, outcome_method='dexscreener_market_price', error=NULL WHERE id=$1""",
+            check_id,
+            market_snapshot_id,
+            price_usd,
         )

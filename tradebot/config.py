@@ -42,6 +42,9 @@ class Settings:
     jupiter: ProviderConfig
     rugcheck: ProviderConfig
     git_commit_sha: str
+    operator_dashboard_username: str | None = None
+    operator_dashboard_password: str | None = None
+    scanner_interval_seconds: float = 900.0
     scanner_lock_key: int = 7_341_628_430_911
 
     @property
@@ -106,7 +109,9 @@ def _non_negative_int(env: Mapping[str, str], name: str) -> int:
     return value
 
 
-def _provider_config(env: Mapping[str, str], prefix: str, credential_env: str | None = None) -> ProviderConfig:
+def _provider_config(
+    env: Mapping[str, str], prefix: str, credential_env: str | None = None
+) -> ProviderConfig:
     state = (
         ProviderCredentialState.CONFIGURED
         if credential_env and env.get(credential_env, "").strip()
@@ -117,7 +122,9 @@ def _provider_config(env: Mapping[str, str], prefix: str, credential_env: str | 
             max_concurrency=_positive_int(env, f"{prefix}_MAX_CONCURRENCY"),
             timeout_seconds=_positive_float(env, f"{prefix}_TIMEOUT_SECONDS"),
             max_retries=_non_negative_int(env, f"{prefix}_MAX_RETRIES"),
-            rate_budget_per_minute=_positive_int(env, f"{prefix}_RATE_BUDGET_PER_MINUTE"),
+            rate_budget_per_minute=_positive_int(
+                env, f"{prefix}_RATE_BUDGET_PER_MINUTE"
+            ),
         ),
         credential_state=state,
     )
@@ -132,14 +139,24 @@ def redacted_url_label(url: str) -> str:
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     source = env if env is not None else os.environ
     _reject_private_key(source)
+    app_env = _get_required(source, "APP_ENV")
+    username = source.get("OPERATOR_DASHBOARD_USERNAME", "").strip() or None
+    password = source.get("OPERATOR_DASHBOARD_PASSWORD", "").strip() or None
+    if app_env.lower() == "production" and (not username or not password):
+        raise ConfigError(
+            "OPERATOR_DASHBOARD_USERNAME and OPERATOR_DASHBOARD_PASSWORD are required in production"
+        )
     return Settings(
         database_url=_get_required(source, "DATABASE_URL"),
         scanner_lock_database_url=_get_required(source, "SCANNER_LOCK_DATABASE_URL"),
-        app_env=_get_required(source, "APP_ENV"),
+        app_env=app_env,
         research_execution_enabled=_parse_false_guard(source),
         dexscreener=_provider_config(source, "DEXSCREENER"),
         helius=_provider_config(source, "HELIUS", "HELIUS_API_KEY"),
         jupiter=_provider_config(source, "JUPITER"),
         rugcheck=_provider_config(source, "RUGCHECK", "RUGCHECK_API_KEY"),
         git_commit_sha=source.get("GIT_COMMIT_SHA", "unknown").strip() or "unknown",
+        operator_dashboard_username=username,
+        operator_dashboard_password=password,
+        scanner_interval_seconds=float(source.get("SCANNER_INTERVAL_SECONDS", "900")),
     )
