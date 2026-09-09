@@ -104,7 +104,7 @@ Provider concurrency, timeout, retry and request-budget values are explicit envi
 
 ### Data integrity
 
-Every `candidate_decision` and `quote_snapshot` stores the strategy version and exact Git commit SHA. Price-bearing rows enforce non-negative values and a configured minimum price floor before return calculation. Outcome calculations reject missing, zero and dust-price inputs instead of dividing them.
+Every `candidate_decision` and `quote_snapshot` stores the strategy version and exact Git commit SHA. Price-bearing rows use exact numeric values and reject null, negative and zero values. Dust handling is based on quote input/output and minimum notional, not a universal dollar-price floor, because legitimate high-supply tokens can trade below any fixed price threshold. Outcome calculations reject invalid values instead of dividing them.
 
 ## Operator routine
 
