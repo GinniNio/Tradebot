@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: tradebot-managed
+    runtime: docker
+    plan: starter
+    numInstances: 1
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: RESEARCH_EXECUTION_ENABLED
+        value: "false"
+      - key: LAUNCH_TRACKER_ENABLED
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: SCANNER_LOCK_DATABASE_URL
+        sync: false
+      - key: DEXSCREENER_MAX_CONCURRENCY
+        value: "2"
+      - key: DEXSCREENER_TIMEOUT_SECONDS
+        value: "10"
+      - key: DEXSCREENER_MAX_RETRIES
+        value: "2"
+      - key: DEXSCREENER_RATE_BUDGET_PER_MINUTE
+        value: "60"
+      - key: HELIUS_MAX_CONCURRENCY
+        value: "1"
+      - key: HELIUS_TIMEOUT_SECONDS
+        value: "10"
+      - key: HELIUS_MAX_RETRIES
+        value: "2"
+      - key: HELIUS_RATE_BUDGET_PER_MINUTE
+        value: "30"
+      - key: JUPITER_MAX_CONCURRENCY
+        value: "1"
+      - key: JUPITER_TIMEOUT_SECONDS
+        value: "10"
+      - key: JUPITER_MAX_RETRIES
+        value: "2"
+      - key: JUPITER_RATE_BUDGET_PER_MINUTE
+        value: "30"
+      - key: RUGCHECK_MAX_CONCURRENCY
+        value: "1"
+      - key: RUGCHECK_TIMEOUT_SECONDS
+        value: "10"
+      - key: RUGCHECK_MAX_RETRIES
+        value: "2"
+      - key: RUGCHECK_RATE_BUDGET_PER_MINUTE
+        value: "20"
