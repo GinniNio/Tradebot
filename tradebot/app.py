@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from tradebot.advisory_lock import AdvisoryLock
 from tradebot.config import Settings, load_settings
@@ -58,7 +59,9 @@ async def healthz():
     settings: Settings = app.state.settings
     db: Database = app.state.db
     scanner_state: ScannerState = app.state.scanner_state
-    return await build_health(settings, db, scanner_state)
+    payload = await build_health(settings, db, scanner_state)
+    status_code = 200 if payload.get("status") == "ok" else 503
+    return JSONResponse(payload, status_code=status_code)
 
 
 @app.get("/")

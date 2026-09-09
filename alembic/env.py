@@ -18,6 +18,16 @@ def _database_url() -> str:
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError("DATABASE_URL is required for Alembic migrations")
+    return normalize_sqlalchemy_postgres_url(url)
+
+
+def normalize_sqlalchemy_postgres_url(url: str) -> str:
+    if url.startswith("postgresql+psycopg://"):
+        return url
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url.removeprefix("postgresql://")
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url.removeprefix("postgres://")
     return url
 
 
@@ -46,4 +56,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-
