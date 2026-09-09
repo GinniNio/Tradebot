@@ -51,7 +51,7 @@ Add:
 
 - `Dockerfile` for the FastAPI service;
 - `render.yaml` for one Render web service;
-- a Neon `DATABASE_URL` configuration path;
+- a Neon `DATABASE_URL` configuration path for normal application queries;\n- a separate direct, non-pooled `SCANNER_LOCK_DATABASE_URL` for the advisory-lock connection;
 - explicit environment validation;
 - `GET /healthz` returning database, scanner, provider and build status;
 - `doctor` command that validates database migration state, required research-provider configuration, configured budgets, health and alert configuration;
@@ -64,11 +64,11 @@ Use a single Render instance. The background loop starts inside application life
 SELECT pg_try_advisory_lock(<stable-bigint-lock-key>);
 ```
 
-Hold the lock on the scanner's dedicated database connection. If it cannot be acquired, keep the API alive but report scanner state `standby`; do not scan. Release it when that connection closes. A timestamp or table-based lease is not acceptable.
+Hold the lock on the scanner's dedicated, non-pooled database connection. Configure that connection with TCP keepalives: `keepalives=1`, `keepalives_idle=15`, `keepalives_interval=5`, `keepalives_count=3`. If it cannot be acquired, keep the API alive but report scanner state `standby`; do not scan. Release it when that connection closes. A timestamp or table-based lease is not acceptable.
 
 ### Work package 2: Neon schema and repository layer
 
-Use UTC `timestamptz`, UUID primary keys and `numeric` for on-chain amounts/prices that participate in calculations. Do not use floating-point values for base-unit amounts.
+Use UTC `timestamptz`, UUID primary keys and Postgres numeric values for calculated amounts/prices. Use `numeric(38,0)` for token and SOL base-unit quantities and serialise those values as strings in API responses. Use `numeric(50,30)` for USD price values and percentage/ratio calculations. Do not use floating-point values for persisted base-unit amounts.
 
 Create migrations for at least:
 
@@ -147,7 +147,7 @@ Provider sequence for every new candidate:
 3. Helius runs one bounded metadata/enrichment request only for candidates that pass step 2.
 4. Jupiter is called only after safety checks pass.
 
-A provider failure creates an explicit `unavailable` evidence/result state. It does not silently pass the candidate.
+A provider failure creates an explicit `unavailable` evidence/result state. It does not silently pass the candidate. RugCheck has its own circuit breaker: after the configured consecutive server-error threshold, pause candidate progression, emit one health alert and use a timed half-open probe before resuming.
 
 ### Work package 4: watch queue and safety pipeline
 
@@ -214,7 +214,7 @@ Implement replay from stored `source_events`, `market_snapshots` and strategy-ve
 
 ### Automated
 
-- Unit tests for configuration validation, provider budgets, advisory-lock standby mode, idempotent event insertion, durable due-work claim, quote base-unit conversion, unsafe-candidate short circuit and round-trip quote persistence.
+- Unit tests for configuration validation, provider budgets and RugCheck circuit breaker, advisory-lock standby mode, idempotent event insertion, `FOR UPDATE SKIP LOCKED` due-work claim, quote base-unit conversion/JSON string serialisation, unsafe-candidate short circuit and round-trip quote persistence.
 - Migration test against an empty Neon-compatible Postgres instance.
 - Migration test re-run is idempotent.
 - Replay test uses fixtures only and performs zero network calls.
@@ -225,7 +225,7 @@ Implement replay from stored `source_events`, `market_snapshots` and strategy-ve
 
 1. Deploy the Render service with a Neon database.
 2. Confirm `/healthz` is green and the scanner is `active`.
-3. Restart/redeploy and confirm the second process stays `standby` until the first releases the advisory lock.
+3. Restart/redeploy and confirm the outgoing instance drains and explicitly releases its advisory lock; confirm the incoming process then becomes `active`. Also confirm a concurrent second process remains `standby` while the holder is healthy.
 4. Insert a fixture source event and confirm raw event, market snapshot, safety result, buy quote, sell quote, decision card and durable outcome rows are visible.
 5. Confirm Telegram creates a decision record but cannot trigger a swap.
 6. Confirm a Render restart does not lose a pending outcome check.
