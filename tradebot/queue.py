@@ -78,7 +78,10 @@ class ResearchQueue:
     ) -> None:
         await self.conn.execute(
             """UPDATE outcome_checks SET status='completed', completed_at=now(), market_snapshot_id=$2,
-            outcome_price_usd=$3, outcome_method='dexscreener_market_price', error=NULL WHERE id=$1""",
+            outcome_price_usd=$3, outcome_method='dexscreener_market_price',
+            market_price_change_pct=CASE WHEN baseline_price_usd > 0
+              THEN (($3::numeric - baseline_price_usd) / baseline_price_usd) * 100 ELSE NULL END,
+            error=NULL WHERE id=$1""",
             check_id,
             market_snapshot_id,
             price_usd,

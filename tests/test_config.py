@@ -9,6 +9,7 @@ def valid_env(**overrides):
         "SCANNER_LOCK_DATABASE_URL": "postgresql://app:pass@example.com/db",
         "APP_ENV": "test",
         "RESEARCH_EXECUTION_ENABLED": "false",
+        "GIT_COMMIT_SHA": "test-commit-sha",
         "DEXSCREENER_MAX_CONCURRENCY": "2",
         "DEXSCREENER_TIMEOUT_SECONDS": "10",
         "DEXSCREENER_MAX_RETRIES": "2",
@@ -70,3 +71,22 @@ def test_provider_budget_requires_non_negative_retries():
 def test_provider_budget_requires_positive_rate_budget():
     with pytest.raises(ConfigError, match="DEXSCREENER_RATE_BUDGET_PER_MINUTE"):
         load_settings(valid_env(DEXSCREENER_RATE_BUDGET_PER_MINUTE="0"))
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "bad"])
+def test_scanner_interval_must_be_finite_and_positive(value):
+    with pytest.raises(ConfigError, match="SCANNER_INTERVAL_SECONDS"):
+        load_settings(valid_env(SCANNER_INTERVAL_SECONDS=value))
+
+
+@pytest.mark.parametrize("value", ["", "unknown", " UNKNOWN "])
+def test_git_commit_sha_must_be_exact(value):
+    with pytest.raises(ConfigError, match="GIT_COMMIT_SHA"):
+        load_settings(valid_env(GIT_COMMIT_SHA=value))
+
+
+def test_render_deployment_commit_is_accepted_as_exact_provenance():
+    settings = load_settings(
+        valid_env(GIT_COMMIT_SHA="", RENDER_GIT_COMMIT="render-sha")
+    )
+    assert settings.git_commit_sha == "render-sha"

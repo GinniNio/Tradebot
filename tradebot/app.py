@@ -16,7 +16,7 @@ from tradebot.db import Database
 from tradebot.dexscreener import DexscreenerClient
 from tradebot.health import build_health
 from tradebot.market_watch import MarketWatchService
-from tradebot.repository import Repository
+from tradebot.repository import InvalidCandidateTransition, Repository
 from tradebot.scanner import ManagedScanner, ScannerState
 from tradebot.serialization import api_value
 
@@ -125,24 +125,43 @@ async def root():
     return {"service": "tradebot-managed", "health": "/healthz"}
 
 
-async def _candidate_rows() -> list[dict]:
+async def _queue_rows() -> tuple[list[dict], list[dict]]:
     async with app.state.db.acquire() as conn:
-        return [
-            api_value(dict(row)) for row in await Repository(conn).list_candidates(3)
-        ]
+        repository = Repository(conn)
+
+        async def enrich(source_rows):
+            rows = []
+            for row in source_rows:
+                item = api_value(dict(row))
+                item["outcomes"] = api_value(
+                    [
+                        dict(outcome)
+                        for outcome in await repository.list_candidate_outcomes(
+                            row["id"]
+                        )
+                    ]
+                )
+                rows.append(item)
+            return rows
+
+        active = await enrich(await repository.list_candidates(3))
+        audit = await enrich(await repository.list_rejected_candidates(20))
+        return active, audit
 
 
 @app.get("/api/candidates")
 async def api_candidates(_user: str = Depends(operator_auth)):
+    candidates, rejected_audit = await _queue_rows()
     return {
         "disclaimer": "Market-screening research only; not a trade recommendation.",
-        "candidates": await _candidate_rows(),
+        "candidates": candidates,
+        "rejected_audit": rejected_audit,
     }
 
 
 @app.get("/candidates", response_class=HTMLResponse)
 async def candidates_dashboard(_user: str = Depends(operator_auth)):
-    rows = await _candidate_rows()
+    rows, audit_rows = await _queue_rows()
     cards = []
     for row in rows:
         esc = lambda value: html.escape(str(value if value is not None else "—"))
@@ -152,20 +171,36 @@ async def candidates_dashboard(_user: str = Depends(operator_auth)):
             )
             or "Passed frozen screen"
         )
+        outcome_lines = (
+            "".join(
+                f"<li>{esc(outcome.get('check_kind'))}: {esc(outcome.get('status'))}; market-price change {esc(outcome.get('market_price_change_pct'))}%</li>"
+                for outcome in row.get("outcomes", [])
+            )
+            or "<li>No outcomes scheduled</li>"
+        )
         cards.append(f"""<article><h2>#{esc(row.get("rank"))} {esc(row.get("token_symbol"))}</h2>
         <p><a href="https://dexscreener.com/solana/{esc(row.get("selected_pair"))}">{esc(row.get("token_address"))}</a></p>
         <p>Pair: {esc(row.get("selected_pair"))} · Score: {esc(row.get("score"))}</p>
         <p>Liquidity: ${esc(row.get("liquidity_usd"))} · Volume 1h/24h: ${esc(row.get("volume_1h_usd"))} / ${esc(row.get("volume_24h_usd"))}</p>
         <p>Movement 1h/24h: {esc(row.get("price_change_1h_pct"))}% / {esc(row.get("price_change_24h_pct"))}% · Market cap/FDV: {esc(row.get("market_cap_usd") or row.get("fdv_usd"))}</p>
         <p>{esc(reasons)} · Decision: {esc(row.get("operator_action"))} · Outcomes: {esc(row.get("outcome_completed"))}/{esc(row.get("outcome_total"))}</p>
+        <ul>{outcome_lines}</ul><p>Market-price research outcomes; not executable returns.</p>
         <p><strong>Exitability: not assessed in this release</strong><br><strong>Security: not assessed in this release</strong></p>
         <p><button onclick="decide('{esc(row.get("id"))}','watch')">Watch</button>
         <button onclick="decide('{esc(row.get("id"))}','reject')">Reject</button></p></article>""")
     content = "".join(cards) or "<p>No candidates passed today</p>"
+    audit = (
+        "".join(
+            f"<li>{html.escape(str(row.get('token_symbol') or row.get('token_address')))} — {html.escape(str(row.get('state')))}; outcomes {row.get('outcome_completed')}/{row.get('outcome_total')} (read-only)</li>"
+            for row in audit_rows
+        )
+        or "<li>No rejected or expired candidates</li>"
+    )
     return HTMLResponse(f"""<!doctype html><html><head><title>Tradebot Market Watch</title>
     <style>body{{font:16px system-ui;max-width:960px;margin:2rem auto;padding:1rem}}article{{border:1px solid #ccc;border-radius:10px;padding:1rem;margin:1rem 0}}</style></head>
     <body><h1>Daily Market Watch</h1><p>Market-screening research only. Not a trade recommendation or executable return.</p>
     <p><button onclick="pause(true)">Pause research</button> <button onclick="pause(false)">Resume research</button></p>{content}
+    <h2>Rejected and expired audit history</h2><ul>{audit}</ul>
     <script>async function decide(id,action){{let note=prompt('Optional note')||null;let r=await fetch('/api/candidates/'+id+'/decision',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action,note}})}});if(r.ok)location.reload();else alert('Decision failed');}}
     async function pause(research_paused){{let r=await fetch('/api/operator/research-paused',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{research_paused}})}});if(r.ok)location.reload();else alert('Pause update failed');}}</script></body></html>""")
 
@@ -181,9 +216,12 @@ async def candidate_decision(
     if body.action not in {"watch", "reject"}:
         raise HTTPException(422, "action must be watch or reject")
     async with app.state.db.acquire() as conn, conn.transaction():
-        row = await Repository(conn).decide_candidate(
-            candidate_id, body.action, body.note, app.state.settings.git_commit_sha
-        )
+        try:
+            row = await Repository(conn).decide_candidate(
+                candidate_id, body.action, body.note, app.state.settings.git_commit_sha
+            )
+        except InvalidCandidateTransition as exc:
+            raise HTTPException(409, str(exc)) from exc
     if not row:
         raise HTTPException(404, "candidate not found")
     return api_value(dict(row))

@@ -146,6 +146,14 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         raise ConfigError(
             "OPERATOR_DASHBOARD_USERNAME and OPERATOR_DASHBOARD_PASSWORD are required in production"
         )
+    git_commit_sha = (
+        source.get("GIT_COMMIT_SHA", "").strip()
+        or source.get("RENDER_GIT_COMMIT", "").strip()
+    )
+    if not git_commit_sha or git_commit_sha.lower() == "unknown":
+        raise ConfigError(
+            "GIT_COMMIT_SHA is required and must identify the deployed commit"
+        )
     return Settings(
         database_url=_get_required(source, "DATABASE_URL"),
         scanner_lock_database_url=_get_required(source, "SCANNER_LOCK_DATABASE_URL"),
@@ -155,8 +163,16 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         helius=_provider_config(source, "HELIUS", "HELIUS_API_KEY"),
         jupiter=_provider_config(source, "JUPITER"),
         rugcheck=_provider_config(source, "RUGCHECK", "RUGCHECK_API_KEY"),
-        git_commit_sha=source.get("GIT_COMMIT_SHA", "unknown").strip() or "unknown",
+        git_commit_sha=git_commit_sha,
         operator_dashboard_username=username,
         operator_dashboard_password=password,
-        scanner_interval_seconds=float(source.get("SCANNER_INTERVAL_SECONDS", "900")),
+        scanner_interval_seconds=_positive_float(
+            {
+                **source,
+                "SCANNER_INTERVAL_SECONDS": source.get(
+                    "SCANNER_INTERVAL_SECONDS", "900"
+                ),
+            },
+            "SCANNER_INTERVAL_SECONDS",
+        ),
     )

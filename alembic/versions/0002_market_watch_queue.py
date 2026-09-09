@@ -103,6 +103,19 @@ def upgrade() -> None:
     op.add_column(
         "candidate_decisions", sa.Column("idempotency_key", sa.Text(), nullable=True)
     )
+    op.add_column(
+        "candidate_decisions",
+        sa.Column(
+            "baseline_market_snapshot_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("market_snapshots.id"),
+            nullable=True,
+        ),
+    )
+    op.add_column(
+        "candidate_decisions",
+        sa.Column("baseline_price_usd", sa.Numeric(50, 30), nullable=True),
+    )
     op.create_unique_constraint(
         "uq_candidate_decisions_candidate", "candidate_decisions", ["candidate_id"]
     )
@@ -128,6 +141,23 @@ def upgrade() -> None:
             sa.ForeignKey("market_snapshots.id"),
             nullable=True,
         ),
+    )
+    op.add_column(
+        "outcome_checks",
+        sa.Column(
+            "baseline_market_snapshot_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("market_snapshots.id"),
+            nullable=True,
+        ),
+    )
+    op.add_column(
+        "outcome_checks",
+        sa.Column("baseline_price_usd", sa.Numeric(50, 30), nullable=True),
+    )
+    op.add_column(
+        "outcome_checks",
+        sa.Column("market_price_change_pct", sa.Numeric(50, 30), nullable=True),
     )
     op.add_column(
         "outcome_checks",
@@ -163,18 +193,15 @@ def upgrade() -> None:
     op.alter_column("research_candidates", "idempotency_key", nullable=False)
     op.alter_column("candidate_decisions", "idempotency_key", nullable=False)
     op.alter_column("outcome_checks", "idempotency_key", nullable=False)
-    op.execute("""
-        INSERT INTO strategy_versions (strategy_key, version, git_commit_sha, config_json)
-        VALUES ('swing_quality', 'market_watch_v1', COALESCE(current_setting('app.git_commit_sha', true), 'unknown'),
-        '{"liquidity_min_usd":"50000","volume_24h_min_usd":"100000","market_cap_min_usd":"250000","market_cap_max_usd":"25000000","price_change_24h_min_pct":"5","price_change_24h_max_pct":"120","price_change_1h_max_pct":"25","score_min":"65","cooldown_hours":24,"shortlist_max":3}'::jsonb)
-        ON CONFLICT (strategy_key, version) DO NOTHING
-    """)
 
 
 def downgrade() -> None:
     for name in ("ck_outcome_checks_method", "uq_outcome_checks_idempotency_key"):
         op.drop_constraint(name, "outcome_checks")
     for column in (
+        "market_price_change_pct",
+        "baseline_price_usd",
+        "baseline_market_snapshot_id",
         "outcome_method",
         "outcome_price_usd",
         "market_snapshot_id",
@@ -187,7 +214,12 @@ def downgrade() -> None:
         "uq_candidate_decisions_candidate",
     ):
         op.drop_constraint(name, "candidate_decisions")
-    op.drop_column("candidate_decisions", "idempotency_key")
+    for column in (
+        "baseline_price_usd",
+        "baseline_market_snapshot_id",
+        "idempotency_key",
+    ):
+        op.drop_column("candidate_decisions", column)
     for column in (
         "price_change_6h_pct",
         "volume_6h_usd",
