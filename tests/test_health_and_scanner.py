@@ -1,0 +1,30 @@
+import asyncio
+
+from tests.test_config import valid_env
+from tradebot.config import load_settings
+from tradebot.health import build_health
+from tradebot.scanner import ManagedScanner, ScannerState
+
+
+def test_health_without_database_is_degraded():
+    health = asyncio.run(build_health(load_settings(valid_env()), None, ScannerState(status="standby")))
+
+    assert health["status"] == "degraded"
+    assert health["scanner"]["state"] == "standby"
+    assert health["providers"]["rugcheck"] == "unavailable"
+    assert health["operator"]["research_paused"] is None
+
+
+def test_scanner_shutdown_cancels_in_flight_task():
+    async def run_case():
+        state = ScannerState(status="active")
+        scanner = ManagedScanner(state)
+        task = asyncio.create_task(asyncio.sleep(60))
+        state.in_flight.add(task)
+
+        await scanner.shutdown(timeout_seconds=0.01)
+
+        assert task.cancelled()
+        assert state.status == "stopped"
+
+    asyncio.run(run_case())
