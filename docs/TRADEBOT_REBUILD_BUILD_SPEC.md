@@ -64,7 +64,7 @@ Use a single Render instance. The background loop starts inside application life
 SELECT pg_try_advisory_lock(<stable-bigint-lock-key>);
 ```
 
-Hold the lock on the scanner's dedicated, non-pooled database connection. Configure that connection with TCP keepalives: `keepalives=1`, `keepalives_idle=15`, `keepalives_interval=5`, `keepalives_count=3`. If it cannot be acquired, keep the API alive but report scanner state `standby`; do not scan. Release it when that connection closes. A timestamp or table-based lease is not acceptable.
+Hold the lock on the scanner's dedicated, non-pooled database connection. Configure that connection with TCP keepalives: `keepalives=1`, `keepalives_idle=15`, `keepalives_interval=5`, `keepalives_count=3`. If it cannot be acquired, keep the API alive but report scanner state `standby`; do not scan. A timestamp or table-based lease is not acceptable.\n\nOn FastAPI lifespan shutdown, set the worker stop event, stop beginning new cycles, wait up to five seconds for in-flight provider work, cancel anything remaining, explicitly call `pg_advisory_unlock` and close the dedicated lock connection. Uvicorn owns SIGTERM handling; do not install a competing application signal handler. The shutdown behaviour is an acceptance criterion, not best-effort cleanup.
 
 ### Work package 2: Neon schema and repository layer
 
@@ -185,7 +185,7 @@ It must show:
 - rank, hard-rejects and reasons;
 - actions: `watch`, `shadow-pick`, `reject`.
 
-No action signs or sends a transaction. Telegram commands only create an authenticated decision record.
+No action signs or sends a transaction. Telegram commands only create an authenticated decision record.\n\nTelegram inline callbacks must contain a compact action code plus a database identifier only, for example `s:<candidate_decision_uuid>`. The webhook authenticates the configured chat, deduplicates `update_id`, looks up the candidate/decision in Neon and applies an idempotent transition. It never accepts token addresses, strategy JSON or authority data from callback payloads. Actions are `watch`, `shadow-pick`, `reject` and `pause-all`; `pause-all` writes `operator_settings.research_paused=true`.
 
 ## Durable outcome and replay loop
 
@@ -205,7 +205,7 @@ Implement replay from stored `source_events`, `market_snapshots` and strategy-ve
 
 - `RESEARCH` is the only permitted strategy state in this delivery.
 - `RESEARCH_EXECUTION_ENABLED` defaults to `false`; any other value causes startup failure.
-- No `SOLANA_PRIVATE_KEY` is required, read or accepted by the research process.
+- No `SOLANA_PRIVATE_KEY` is required, read or accepted by the research process.\n- Any future signing module is a separately approved deployment boundary: a key may exist only in the runtime secret store, never in Neon, Telegram payloads, logs or fixtures; transaction generation must re-check a database strategy state of `LIVE_CANDIDATE` or `LIVE`.
 - A database-backed daily-loss breaker, hard slippage cap, maximum exposure, low-balance wallet and global kill switch are future `LIVE_CANDIDATE` requirements. Do not implement signing now.
 - Include a visible global `research_paused` switch. It stops new scanning but continues durable outcome checks.
 - Do not close token accounts in this delivery. That belongs only to a later supervised execution module after an account-state design review.
@@ -219,7 +219,7 @@ Implement replay from stored `source_events`, `market_snapshots` and strategy-ve
 - Migration test re-run is idempotent.
 - Replay test uses fixtures only and performs zero network calls.
 - API test verifies `/healthz` reports scanner `active` for the lock holder and `standby` for a second instance.
-- Security test verifies research startup fails if execution is enabled or a private-key configuration is supplied.
+- Security test verifies research startup fails if execution is enabled or a private-key configuration is supplied.\n- Shutdown test verifies lifespan drain stops new cycles, caps in-flight waits at five seconds, releases the advisory lock and allows a standby instance to acquire it.
 
 ### Manual
 
@@ -227,7 +227,7 @@ Implement replay from stored `source_events`, `market_snapshots` and strategy-ve
 2. Confirm `/healthz` is green and the scanner is `active`.
 3. Restart/redeploy and confirm the outgoing instance drains and explicitly releases its advisory lock; confirm the incoming process then becomes `active`. Also confirm a concurrent second process remains `standby` while the holder is healthy.
 4. Insert a fixture source event and confirm raw event, market snapshot, safety result, buy quote, sell quote, decision card and durable outcome rows are visible.
-5. Confirm Telegram creates a decision record but cannot trigger a swap.
+5. Confirm Telegram callbacks use compact IDs, reject an unauthorised chat, deduplicate a replayed update and create exactly one decision record; confirm `pause-all` persists across a restart while due outcome checks continue. Confirm no action can trigger a swap.
 6. Confirm a Render restart does not lose a pending outcome check.
 7. Confirm no provider key, database URL or wallet material appears in logs, responses, fixtures or GitHub Actions output.
 
