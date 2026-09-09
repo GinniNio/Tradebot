@@ -1,4 +1,7 @@
 import asyncio
+from contextlib import asynccontextmanager
+
+from asyncpg.exceptions import UndefinedTableError
 
 from tests.test_config import valid_env
 from tradebot.config import load_settings
@@ -13,6 +16,31 @@ def test_health_without_database_is_degraded():
     assert health["scanner"]["state"] == "standby"
     assert health["providers"]["rugcheck"] == "unavailable"
     assert health["operator"]["research_paused"] is None
+
+
+def test_health_missing_outcome_checks_returns_degraded_json():
+    class MissingTableConn:
+        async def fetchval(self, _query):
+            return 1
+
+        async def fetchrow(self, _query):
+            raise UndefinedTableError("relation outcome_checks does not exist")
+
+    class MissingTableDb:
+        pool = object()
+
+        @asynccontextmanager
+        async def acquire(self):
+            yield MissingTableConn()
+
+    health = asyncio.run(
+        build_health(load_settings(valid_env()), MissingTableDb(), ScannerState(status="active"))
+    )
+
+    assert health["status"] == "degraded"
+    assert health["database"]["ok"] is False
+    assert health["database"]["error"] == "UndefinedTableError"
+    assert "relation" not in str(health)
 
 
 def test_scanner_shutdown_cancels_in_flight_task():

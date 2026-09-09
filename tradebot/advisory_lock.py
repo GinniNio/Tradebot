@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from inspect import isawaitable
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from tradebot.config import Settings
+
+try:
+    from asyncpg.exceptions import InterfaceError, PostgresError
+except ImportError:  # pragma: no cover - asyncpg is installed in managed deployments.
+    InterfaceError = PostgresError = ()
 
 KEEPALIVE_OPTIONS = {
     "keepalives": "1",
@@ -18,6 +24,19 @@ def with_keepalives(dsn: str) -> str:
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     query.update(KEEPALIVE_OPTIONS)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _conn_is_closed(conn: Any) -> bool:
+    is_closed = getattr(conn, "is_closed", None)
+    if callable(is_closed):
+        result = is_closed()
+        if isawaitable(result):
+            close = getattr(result, "close", None)
+            if callable(close):
+                close()
+            return False
+        return bool(result)
+    return False
 
 
 class AdvisoryLock:
@@ -35,9 +54,15 @@ class AdvisoryLock:
         return self.acquired
 
     async def release(self) -> None:
-        if self.conn:
+        if self.conn and not _conn_is_closed(self.conn):
             if self.acquired:
-                await self.conn.execute("SELECT pg_advisory_unlock($1)", self.settings.scanner_lock_key)
-            await self.conn.close()
+                try:
+                    await self.conn.execute("SELECT pg_advisory_unlock($1)", self.settings.scanner_lock_key)
+                except (OSError, TimeoutError, RuntimeError, InterfaceError, PostgresError) as exc:
+                    self.last_error_category = type(exc).__name__
+            try:
+                await self.conn.close()
+            except (OSError, TimeoutError, RuntimeError, InterfaceError, PostgresError) as exc:
+                self.last_error_category = type(exc).__name__
         self.conn = None
         self.acquired = False

@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import types
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from tests.test_config import valid_env
 from tradebot.advisory_lock import AdvisoryLock, with_keepalives
@@ -50,3 +50,34 @@ def test_advisory_lock_releases_when_acquired(monkeypatch):
 
     conn.execute.assert_awaited_once()
     assert "pg_advisory_unlock" in conn.execute.await_args.args[0]
+
+
+def test_advisory_lock_release_is_idempotent_when_connection_already_closed():
+    conn = AsyncMock()
+    conn.is_closed = MagicMock(return_value=True)
+    lock = AdvisoryLock(load_settings(valid_env()))
+    lock.conn = conn
+    lock.acquired = True
+
+    asyncio.run(lock.release())
+
+    conn.execute.assert_not_called()
+    conn.close.assert_not_called()
+    assert lock.conn is None
+    assert lock.acquired is False
+
+
+def test_advisory_lock_release_masks_unlock_and_close_errors():
+    conn = AsyncMock()
+    conn.is_closed = MagicMock(return_value=False)
+    conn.execute.side_effect = RuntimeError("network details")
+    conn.close.side_effect = RuntimeError("close details")
+    lock = AdvisoryLock(load_settings(valid_env()))
+    lock.conn = conn
+    lock.acquired = True
+
+    asyncio.run(lock.release())
+
+    assert lock.conn is None
+    assert lock.acquired is False
+    assert lock.last_error_category == "RuntimeError"

@@ -4,7 +4,12 @@ from tradebot.config import Settings
 from tradebot.db import Database, migration_status
 from tradebot.scanner import ScannerState
 
-EXPECTED_HEALTH_ERRORS = (OSError, TimeoutError, RuntimeError)
+try:
+    from asyncpg.exceptions import PostgresError, UndefinedTableError
+except ImportError:  # pragma: no cover - asyncpg is installed in managed deployments.
+    PostgresError = UndefinedTableError = ()
+
+EXPECTED_HEALTH_ERRORS = (OSError, TimeoutError, RuntimeError, PostgresError, UndefinedTableError)
 
 
 async def build_health(settings: Settings, db: Database | None, scanner: ScannerState) -> dict:
