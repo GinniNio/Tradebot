@@ -1,5 +1,7 @@
 # How Tradebot Works
 
+> **Authoritative scope:** Tradebot is a research-only Solana candidate-intelligence system. It scans, checks, researches, ranks and records operator picks as shadow positions. It does not autonomously trade real money. See [Solo Operator Scope](docs/SOLO_OPERATOR_SCOPE.md).
+
 Research-only paper-trading bot for Solana memecoins. No position has ever opened. This doc covers how it finds candidates, decides whether to signal, and how it measures whether a strategy is any good.
 
 ## The core loop
