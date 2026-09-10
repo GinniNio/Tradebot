@@ -34,3 +34,5 @@ def test_rejected_candidate_audit_row_renders_rejection_and_market_fields():
     assert "Volume 1h/24h: $1234 / $98765" in html
     assert "Movement 1h/24h: 26.5% / 72.25%" in html
     assert "SelectedPair11111111111111111111111111111" in html
+    assert "Rejected because:" in html
+    assert "hard_rejects_json:" not in html
