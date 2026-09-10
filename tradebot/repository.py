@@ -135,11 +135,15 @@ class Repository:
     async def list_rejected_candidates(self, limit: int = 20) -> list[Any]:
         return list(
             await self.conn.fetch(
-                """SELECT rc.*, ms.price_usd, cd.operator_action,
+                """SELECT rc.*, ms.liquidity_usd, ms.volume_1h_usd, ms.volume_24h_usd,
+                ms.price_usd, ms.price_change_1h_pct, ms.price_change_24h_pct,
+                cd.operator_action,
                 COALESCE(oc.total, 0) outcome_total, COALESCE(oc.completed, 0) outcome_completed
                 FROM research_candidates rc
                 LEFT JOIN LATERAL (
-                    SELECT price_usd FROM market_snapshots WHERE candidate_id=rc.id
+                    SELECT liquidity_usd, volume_1h_usd, volume_24h_usd,
+                    price_usd, price_change_1h_pct, price_change_24h_pct
+                    FROM market_snapshots WHERE candidate_id=rc.id
                     ORDER BY captured_at DESC LIMIT 1
                 ) ms ON true
                 LEFT JOIN candidate_decisions cd ON cd.candidate_id=rc.id

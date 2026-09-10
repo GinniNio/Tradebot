@@ -11,6 +11,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
 from tradebot.advisory_lock import AdvisoryLock
+from tradebot.candidate_rendering import render_rejected_audit_rows
 from tradebot.config import Settings, load_settings
 from tradebot.db import Database
 from tradebot.dexscreener import DexscreenerClient
@@ -189,13 +190,7 @@ async def candidates_dashboard(_user: str = Depends(operator_auth)):
         <p><button onclick="decide('{esc(row.get("id"))}','watch')">Watch</button>
         <button onclick="decide('{esc(row.get("id"))}','reject')">Reject</button></p></article>""")
     content = "".join(cards) or "<p>No candidates passed today</p>"
-    audit = (
-        "".join(
-            f"<li>{html.escape(str(row.get('token_symbol') or row.get('token_address')))} — {html.escape(str(row.get('state')))}; outcomes {row.get('outcome_completed')}/{row.get('outcome_total')} (read-only)</li>"
-            for row in audit_rows
-        )
-        or "<li>No rejected or expired candidates</li>"
-    )
+    audit = render_rejected_audit_rows(audit_rows)
     return HTMLResponse(f"""<!doctype html><html><head><title>Tradebot Market Watch</title>
     <style>body{{font:16px system-ui;max-width:960px;margin:2rem auto;padding:1rem}}article{{border:1px solid #ccc;border-radius:10px;padding:1rem;margin:1rem 0}}</style></head>
     <body><h1>Daily Market Watch</h1><p>Market-screening research only. Not a trade recommendation or executable return.</p>
