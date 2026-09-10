@@ -14,6 +14,10 @@ services:
         value: "false"
       - key: DATABASE_URL
         sync: false
+      - key: OPERATOR_DASHBOARD_USERNAME
+        sync: false
+      - key: OPERATOR_DASHBOARD_PASSWORD
+        sync: false
       - key: SCANNER_LOCK_DATABASE_URL
         sync: false
       - key: DEXSCREENER_MAX_CONCURRENCY
