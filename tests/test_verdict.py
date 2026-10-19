@@ -179,5 +179,6 @@ def test_text_report_states_cost_convention_and_three_questions():
     }
     text = render_text(report)
     for phrase in ("1. IS IT WORKING?", "2. IS IT FINDING SUITABLE TOKENS?", "3. WHAT HAPPENED AFTERWARDS?",
-                   "zero-cost buy-and-hold", "not verified trading returns", "not a causal comparison"):
+                   "zero-cost buy-and-hold", "not verified trading returns", "not a causal comparison",
+                   "still valid", "inside the collection window"):
         assert phrase in text

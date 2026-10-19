@@ -117,7 +117,7 @@ You can see picks in two places:
 | 2% and 5% cost scenarios | Price changes aren't trade fills. Each scenario is one assumed deduction covering entry and exit together, applied identically to eligible and control returns. SOL is a zero-cost buy-and-hold benchmark. These are scenarios, not verified trading returns. |
 | First half vs second half (by discovery time), with counts | Shows whether the result holds over time or came from one burst |
 | Median by discovery day | Exposes a single good or bad day driving the result |
-| Status of every check: not yet due, waiting, completed on time, completed late, unresolved (with reason) | Every enrolled token stays in the denominator; missing prices stay visible |
+| Status of every check: not yet due, waiting, completed on time, completed late, unresolved (with reason) | Every enrolled token stays in the denominator; missing prices stay visible. "On time" means observed within 15 minutes of schedule. "Late" means after that but inside the horizon's collection window (1h: 15 min, 24h: 2 h, 3d: 6 h, 7d: 12 h), and is still a valid observation. "Unresolved" means no usable price arrived inside the collection window. |
 | A conservative line counting unresolved checks as -100% | A stated assumption shown separately from observed returns, so dead tokens can't flatter the result |
 | Results by trigger (new-token feed vs recheck) | Where qualifying tokens come from. The populations overlap, so this is not a causal comparison |
 | Tokens in both cohorts | A control token that later qualifies keeps its control record; its eligible record starts at the later price |

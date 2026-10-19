@@ -281,7 +281,7 @@ async def report_page(days: int = 7, _user: str = Depends(operator_auth)):
     <h2>3. What happened afterwards?</h2>
     <p>{html.escape(verdict.COST_NOTE)} Unresolved checks have no price; the conservative column
     assumes -100% for them, as a stated assumption. Primary horizon (24h) highlighted.</p>
-    <h3>Observation status</h3>
+    <h3>Observation status</h3><p>{html.escape(verdict.STATUS_NOTE)}</p>
     {_table(status_keys, rows_for(status_keys), "No outcomes recorded yet.")}
     <h3>Results</h3>
     {_table(result_keys, rows_for(result_keys), "No outcomes recorded yet.")}

@@ -286,6 +286,12 @@ def _fmt(value: Any) -> str:
     return str(value)
 
 
+STATUS_NOTE = (
+    "On time = observed within 15 minutes of the scheduled time. Late = observed after that but "
+    "inside the horizon's collection window (1h: 15 min, 24h: 2 h, 3d: 6 h, 7d: 12 h); a late "
+    "observation is still valid and counts in the results. Unresolved = no usable price arrived "
+    "inside the collection window. Waiting = past the scheduled time, window still open."
+)
 COST_NOTE = (
     "Cost scenarios: one assumed 2% or 5% deduction covering entry and exit together, "
     "applied the same way to eligible and control returns. SOL is a zero-cost "
@@ -326,7 +332,8 @@ def render_text(report: dict[str, Any]) -> str:
     lines.append("  rejected because an input was missing or invalid:")
     lines += [f"    {n:>7}  {r}" for r, n in throughput["missing_inputs"].items()] or ["    none"]
 
-    lines += ["", "3. WHAT HAPPENED AFTERWARDS? (market-price % change; not executable returns)", f"  {COST_NOTE}"]
+    lines += ["", "3. WHAT HAPPENED AFTERWARDS? (market-price % change; not executable returns)",
+              f"  {STATUS_NOTE}", f"  {COST_NOTE}"]
     if not outcomes:
         lines.append("  No experiment outcomes recorded yet.")
     for key, item in outcomes.items():
