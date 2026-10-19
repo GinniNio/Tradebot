@@ -4,18 +4,39 @@ import types
 from unittest.mock import AsyncMock, MagicMock
 
 from tests.test_config import valid_env
-from tradebot.advisory_lock import AdvisoryLock, with_keepalives
+from tradebot.advisory_lock import AdvisoryLock
 from tradebot.config import load_settings
 
 
-def test_lock_dsn_adds_required_keepalives():
-    dsn = with_keepalives("postgresql://u:p@example.com/db?sslmode=require")
+def test_lock_connects_with_configured_dsn_and_sets_keepalives(monkeypatch):
+    conn = AsyncMock()
+    conn.fetchval.return_value = True
+    connect = AsyncMock(return_value=conn)
+    _install_asyncpg_stub(monkeypatch, connect)
+    settings = load_settings(valid_env())
+    lock = AdvisoryLock(settings)
 
-    assert "sslmode=require" in dsn
-    assert "tcp_keepalives_idle=15" in dsn
-    assert "tcp_keepalives_interval=5" in dsn
-    assert "tcp_keepalives_count=3" in dsn
-    assert "keepalives=1" not in dsn
+    assert asyncio.run(lock.acquire()) is True
+
+    # The DSN is passed through untouched: no startup parameters are added.
+    assert connect.await_args.kwargs["dsn"] == settings.scanner_lock_database_url
+    statements = [call.args[0] for call in conn.execute.await_args_list]
+    assert statements == [
+        "SET tcp_keepalives_idle = 15",
+        "SET tcp_keepalives_interval = 5",
+        "SET tcp_keepalives_count = 3",
+    ]
+
+
+def test_refused_keepalive_setting_does_not_block_the_lock(monkeypatch):
+    from asyncpg.exceptions import InsufficientPrivilegeError
+
+    conn = AsyncMock()
+    conn.fetchval.return_value = True
+    conn.execute.side_effect = InsufficientPrivilegeError("not allowed")
+    _install_asyncpg_stub(monkeypatch, AsyncMock(return_value=conn))
+
+    assert asyncio.run(AdvisoryLock(load_settings(valid_env())).acquire()) is True
 
 
 def _install_asyncpg_stub(monkeypatch, connect):
@@ -35,7 +56,7 @@ def test_advisory_lock_reports_standby_when_not_acquired(monkeypatch):
 
     assert acquired is False
     assert lock.acquired is False
-    conn.execute.assert_not_called()
+    assert not any("pg_advisory_unlock" in call.args[0] for call in conn.execute.await_args_list)
     conn.close.assert_awaited_once()
 
 
@@ -48,7 +69,6 @@ def test_advisory_lock_releases_when_acquired(monkeypatch):
     assert asyncio.run(lock.acquire()) is True
     asyncio.run(lock.release())
 
-    conn.execute.assert_awaited_once()
     assert "pg_advisory_unlock" in conn.execute.await_args.args[0]
 
 
