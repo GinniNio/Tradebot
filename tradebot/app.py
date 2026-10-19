@@ -6,6 +6,7 @@ import html
 import os
 import secrets
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -134,8 +135,11 @@ def operator_auth(credentials: HTTPBasicCredentials | None = Depends(basic)) -> 
 
 
 def same_origin(request: Request) -> None:
+    # Compare hosts only. Render terminates TLS, so the app sees http:// while
+    # the browser's Origin is https://; comparing full URLs rejected every
+    # dashboard button. Another site's Origin still has a different host.
     origin = request.headers.get("origin")
-    if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+    if origin and urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
         raise HTTPException(status_code=403, detail="Cross-origin mutation rejected")
 
 
