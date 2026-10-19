@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
@@ -34,7 +34,7 @@ def _d(value: Any) -> Decimal | None:
     try:
         result = Decimal(str(value))
         return result if result.is_finite() else None
-    except (ValueError, TypeError):
+    except (InvalidOperation, ValueError, TypeError):
         return None
 
 
