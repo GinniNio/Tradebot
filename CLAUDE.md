@@ -57,7 +57,7 @@ Each cycle (`tradebot/market_watch.py`) writes one `scan_cycles` row with counts
 
 ### Reporting (`tradebot/verdict.py`)
 
-One set of calculations is used by `/report`, `/report/summary.csv`, `/report/observations.csv` and `python -m tradebot.verdict [--days N] [--json]` (needs only `DATABASE_URL`). Per cohort and horizon it shows tokens, observed, unresolved by reason, pending, mean, median, share losing, worst and best, mean without the top 1 and top 2, top-winner share of gains, the conservative scenario, SOL over the same windows and excess return, 2% and 5% cost sensitivity, chronological halves with n, and medians by discovery day. Returns are Dexscreener market-price changes, not executable fills.
+One set of calculations is used by `/report`, `/report/summary.csv`, `/report/observations.csv` and `python -m tradebot.verdict [--days N] [--json]` (needs only `DATABASE_URL`). The report answers three questions: is it working (scan health), is it finding suitable tokens (observation counts with repeats, exact unique enrolled tokens per cohort and trigger, recheck pool size, rule failures kept apart from missing inputs), and what happened afterwards (per horizon: not yet due, waiting, on time, late, unresolved). It does not show unique tokens assessed or per-source qualification rates, because failed rechecks are counted, not stored. Cost scenarios are one assumed 2% or 5% deduction covering entry and exit, applied the same way to both cohorts; SOL is a zero-cost buy-and-hold benchmark. Per cohort and horizon it shows tokens, observed, unresolved by reason, pending, mean, median, share losing, worst and best, mean without the top 1 and top 2, top-winner share of gains, the conservative scenario, SOL over the same windows and excess return, 2% and 5% cost sensitivity, chronological halves with n, and medians by discovery day. Returns are Dexscreener market-price changes, not executable fills.
 
 Before calling anything promising: the median and the mean must both hold up, results must beat SOL and the control cohort, must not depend on one token or one day, and must survive costs. Then the next step is quote-only (Jupiter) entry and exit checks on a fresh batch. Still no wallet.
 
@@ -79,7 +79,7 @@ Before calling anything promising: the median and the mean must both hold up, re
 | `verdict.py` | Report calculations, CSV, CLI. |
 | `health.py`, `doctor.py` | Health payload; one-off diagnostic CLI. |
 
-Migrations live in `alembic/versions/` (0001 foundation, 0002 market watch queue, 0003 research experiment). They are additive. Tables: `strategy_versions`, `source_events`, `research_candidates`, `market_snapshots`, `candidate_decisions`, `outcome_checks`, `scan_cycles`, `operator_settings`, plus `quote_snapshots` and `evidence_items` (created, not yet written to).
+Migrations live in `alembic/versions/` (0001 foundation, 0002 market watch queue, 0003 research experiment, 0004 `outcome_checks.trigger_source`). They are additive. Tables: `strategy_versions`, `source_events`, `research_candidates`, `market_snapshots`, `candidate_decisions`, `outcome_checks`, `scan_cycles`, `operator_settings`, plus `quote_snapshots` and `evidence_items` (created, not yet written to).
 
 ## Shipping a change
 

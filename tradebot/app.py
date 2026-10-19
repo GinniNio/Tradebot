@@ -208,49 +208,85 @@ async def _report(days: int) -> dict:
         return await verdict.collect_from_conn(conn, days)
 
 
+def _table(headers, rows, empty):
+    head = "".join(f"<th>{html.escape(h)}</th>" for h in headers)
+    body = "".join(rows) or f'<tr><td colspan="{len(headers)}">{html.escape(empty)}</td></tr>'
+    return f'<div class="scroll"><table><tr>{head}</tr>{body}</table></div>'
+
+
 @app.get("/report", response_class=HTMLResponse)
 async def report_page(days: int = 7, _user: str = Depends(operator_auth)):
     days = max(1, min(days, 90))
     report = await _report(days)
     throughput = report["throughput"]
-    day_rows = "".join(
-        "<tr>" + "".join(f"<td>{_cell(d.get(k, 0))}</td>" for k in (
-            "day", "cycles_ok", "cycles_error", "scored", "passed_hard_filters", "eligible",
-            "eligible_tokens_started", "control_tokens_started", "recheck_tokens",
-            "outcomes_completed", "outcomes_unresolved", "provider_errors")) + "</tr>"
-        for d in throughput["days"]
-    ) or '<tr><td colspan="12">No scans recorded in this period.</td></tr>'
-    reasons = "".join(
-        f"<tr><td>{html.escape(reason)}</td><td>{count}</td></tr>"
-        for reason, count in throughput["rejection_reasons"].items()
-    ) or '<tr><td colspan="2">None yet.</td></tr>'
+
+    day_keys = ("day", "cycles_ok", "cycles_error", "scored", "passed_hard_filters", "eligible",
+                "recheck_tokens", "provider_errors")
+    day_rows = ["<tr>" + "".join(f"<td>{_cell(d.get(k, 0))}</td>" for k in day_keys) + "</tr>"
+                for d in throughput["days"]]
+    pool = throughput["recheck_pool"]
+    enrol_rows = [
+        "<tr>" + "".join(f"<td>{_cell(v)}</td>" for v in (
+            cohort, counts["total"], counts.get("profile_feed", 0), counts.get("recheck", 0),
+            counts.get("unknown", 0))) + "</tr>"
+        for cohort, counts in report["enrolment"].items()
+    ]
+    rule_rows = [f"<tr><td>{html.escape(r)}</td><td>{n}</td></tr>" for r, n in throughput["rejection_reasons"].items()]
+    missing_rows = [f"<tr><td>{html.escape(r)}</td><td>{n}</td></tr>" for r, n in throughput["missing_inputs"].items()]
+
     summary = verdict.summary_rows(report["outcomes"])
-    shown = ("cohort", "horizon", "tokens", "observed", "unresolved", "pending", "median_pct",
-             "mean_pct", "pct_losing", "worst_pct", "mean_without_top_1",
-             "conservative_median_pct", "excess_vs_sol_median_pct", "after_2pct_median",
-             "first_half_n", "first_half_median", "second_half_n", "second_half_median")
-    outcome_rows = "".join(
-        f'<tr class="{"primary" if row["primary"] else ""}">'
-        + "".join(f"<td>{_cell(row[k])}</td>" for k in shown) + "</tr>"
-        for row in summary
-    ) or f'<tr><td colspan="{len(shown)}">No outcomes recorded yet.</td></tr>'
+    status_keys = ("cohort", "horizon", "tokens", "not_yet_due", "waiting", "completed_on_time",
+                   "completed_late", "unresolved", "tokens_profile_feed", "tokens_recheck",
+                   "tokens_unknown_source")
+    result_keys = ("cohort", "horizon", "observed", "median_pct", "mean_pct", "pct_positive",
+                   "pct_losing", "worst_pct", "mean_without_top_1", "mean_without_top_2",
+                   "conservative_median_pct", "after_2pct_median", "after_5pct_median",
+                   "sol_median_pct", "excess_vs_sol_median_pct", "excess_vs_sol_after_2pct_median",
+                   "first_half_n", "first_half_median", "second_half_n", "second_half_median")
+
+    def rows_for(keys):
+        return [f'<tr class="{"primary" if r["primary"] else ""}">'
+                + "".join(f"<td>{_cell(r[k])}</td>" for k in keys) + "</tr>" for r in summary]
+
+    by_source_rows = [
+        f"<tr><td>{html.escape(key)}</td><td>{html.escape(src)}</td><td>{_cell(d['n'])}</td>"
+        f"<td>{_cell(d.get('median'))}</td><td>{_cell(d.get('mean'))}</td></tr>"
+        for key, item in report["outcomes"].items() for src, d in item["observed_by_source"].items()
+    ]
+
     return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Tradebot Research Report</title><style>{PAGE_STYLE}</style></head><body>{NAV}
     <h1>Research report: {html.escape(verdict.STRATEGY_VERSION)}</h1>
-    <p>Market-price research only. Returns are Dexscreener price changes, not executable trades.
-    Unresolved checks have no price; they count as -100% only in the conservative column.</p>
-    {_status_block(report)}
+    <p>Market-price research only. Returns are Dexscreener price changes, not executable trades.</p>
     <p><a href="/report/summary.csv?days={days}">Download summary CSV</a> ·
     <a href="/report/observations.csv">Download observations CSV</a> ·
     Period: <a href="/report?days=7">7 days</a> <a href="/report?days=30">30 days</a></p>
-    <h2>Outcomes (primary horizon highlighted)</h2><div class="scroll"><table>
-    <tr>{"".join(f"<th>{html.escape(k)}</th>" for k in shown)}</tr>{outcome_rows}</table></div>
-    <h2>Collection, last {days} days</h2><div class="scroll"><table>
-    <tr><th>day</th><th>scans ok</th><th>failed</th><th>scored</th><th>passed hard filters</th>
-    <th>eligible</th><th>eligible started</th><th>control started</th><th>rechecked</th>
-    <th>checks done</th><th>unresolved</th><th>provider errors</th></tr>{day_rows}</table></div>
-    <h2>Rejection reasons, last {days} days</h2><p>One token can fail several rules.</p>
-    <div class="scroll"><table><tr><th>reason</th><th>count</th></tr>{reasons}</table></div>
+
+    <h2>1. Is it working?</h2>
+    {_status_block(report)}
+
+    <h2>2. Is it finding suitable tokens? (last {days} days)</h2>
+    <p>{html.escape(verdict.POOL_NOTE)}</p>
+    {_table(("day", "scans ok", "failed", "scored", "passed hard filters", "eligible", "rechecked", "provider errors"), day_rows, "No scans recorded in this period.")}
+    <p>Recheck pool (tokens first seen 1-7 days ago, before the 300-per-cycle cap):
+    latest {_cell(pool["latest"])}, range {_cell(pool["min"])}-{_cell(pool["max"])} over {pool["cycles"]} cycles.</p>
+    <h3>Unique tokens enrolled (exact, all time for this version)</h3>
+    {_table(("cohort", "total", "via new-token feed", "via recheck", "unknown (before source was recorded)"), enrol_rows, "None enrolled yet.")}
+    <p>Tokens in both cohorts (control first, later eligible): {report["overlap"]["tokens_in_both"]}.
+    Their control record is kept; the eligible record starts at the later price.</p>
+    <h3>Why tokens were rejected</h3><p>Observations, repeats included; one token can fail several rules.</p>
+    {_table(("rule failed (input present)", "count"), rule_rows, "None.")}
+    {_table(("rejected because an input was missing or invalid", "count"), missing_rows, "None.")}
+
+    <h2>3. What happened afterwards?</h2>
+    <p>{html.escape(verdict.COST_NOTE)} Unresolved checks have no price; the conservative column
+    assumes -100% for them, as a stated assumption. Primary horizon (24h) highlighted.</p>
+    <h3>Observation status</h3>
+    {_table(status_keys, rows_for(status_keys), "No outcomes recorded yet.")}
+    <h3>Results</h3>
+    {_table(result_keys, rows_for(result_keys), "No outcomes recorded yet.")}
+    <h3>By trigger</h3><p>New-token feed vs recheck. Overlapping populations; not a causal comparison.</p>
+    {_table(("cohort/horizon", "trigger", "observed", "median", "mean"), by_source_rows, "No completed observations yet.")}
     </body></html>""")
 
 

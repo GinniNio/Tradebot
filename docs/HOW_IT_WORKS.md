@@ -27,7 +27,7 @@ flowchart TD
     D --> F[3. Score each token<br/>5 hard filters + 100-point score]
     E --> F
     F --> G{Result}
-    G -- "score >= 65" --> H[Eligible cohort<br/>start +1h/24h/3d/7d checks<br/>at this price, once per token]
+    G -- "passes all 5 filters<br/>AND score >= 65" --> H[Eligible cohort<br/>start +1h/24h/3d/7d checks<br/>at this price, once per token]
     G -- "passes filters, score < 65,<br/>in the fixed 50% sample" --> I[Control cohort<br/>same checks]
     G -- fails a filter --> J[Rejected<br/>reason counted]
     H --> Z
@@ -40,12 +40,14 @@ flowchart TD
 1. **Settle due price checks.** Any check whose time has come (for example a token that qualified 24 hours ago) gets its current price from Dexscreener, along with SOL's price at the same moment. If no valid price arrives within the allowed window, the check is closed as **unresolved** with the reason. No price is ever made up.
 2. **Find tokens to look at**, from two sources:
    - **Discovery:** the 30 newest token profiles on Dexscreener. In practice these are almost all tokens under a day old.
-   - **Recheck:** up to 300 tokens the bot first saw 1 to 7 days ago, revisited because a token that survives a few days can grow into the liquidity and volume the rules need. A recheck that still fails the filters is only counted, not stored.
+   - **Recheck:** up to 300 tokens the bot first saw 1 to 7 days ago, revisited because a token that survives a few days can grow into the liquidity and volume the rules need. When more than 300 qualify, a fresh random 300 is drawn each cycle (a hash of the token and the 15-minute window), so every token has the same chance each cycle. A recheck that still fails the filters is only counted, not stored. The pool size is logged each cycle.
+   - **Known gap:** a new token is only scored while it is among the 30 newest profiles, usually minutes, and is not looked at again until it is a day old. Tokens older than 7 days are never looked at. Closing either gap would change which tokens are measured, so it needs a new version; it is on the agenda for the 2026-10-26 review.
+   - Each measurement records which path triggered it (`trigger_source`: `profile_feed` or `recheck`). Entries made before this was recorded show as "unknown"; their source is not guessed.
 3. **Score every token** with the fixed rules (next section).
 4. **Act on the result:** start measuring eligible tokens and the sampled near-misses, and count the rejection reasons.
-5. **Record the cycle** in `scan_cycles`: how many tokens were scored, passed, qualified or rejected (with reasons), how many checks completed, and any error. The report's "collection" table is built from these rows.
+5. **Record the cycle** in `scan_cycles`: how many observations were scored, passed, qualified or rejected, the rejection reasons (rule failures kept apart from missing or invalid inputs), the recheck pool size, how many checks completed, and any error. These are observation counts and include repeats; unique tokens are counted only where each token is stored (enrolled eligible and control tokens).
 
-If the service restarts, nothing is lost. Price checks live in the database, and checks abandoned by a crash are picked up again after 10 minutes. During a deploy the new copy waits in standby until the old one releases the scanner lock, so two copies never scan at once.
+Price checks are stored in the database, so a restart doesn't erase them, and a check abandoned mid-way by a crash is picked up again after 10 minutes. A restart or outage can still cost observations: a check that gets no valid price inside its window is closed as **unresolved** with a reason, so the gap is visible in the report but the price is gone. Scans that would have run during downtime don't happen, so tokens can be missed. During a deploy the new copy waits in standby until the old one releases the scanner lock, so two copies never scan at once.
 
 ## The model
 
@@ -112,10 +114,13 @@ You can see picks in two places:
 | Median **and** mean | Memecoins produce rare huge winners. A positive mean with a negative median usually means one lucky token. |
 | Mean without the top 1 and top 2 tokens, plus the top winner's share of gains | Shows whether the result depends on one outlier |
 | Share of tokens losing, worst and best | Shows the typical experience and the tail risk |
-| 2% and 5% round-trip cost lines | Price changes aren't trade fills; the edge must survive costs |
+| 2% and 5% cost scenarios | Price changes aren't trade fills. Each scenario is one assumed deduction covering entry and exit together, applied identically to eligible and control returns. SOL is a zero-cost buy-and-hold benchmark. These are scenarios, not verified trading returns. |
 | First half vs second half (by discovery time), with counts | Shows whether the result holds over time or came from one burst |
 | Median by discovery day | Exposes a single good or bad day driving the result |
-| Unresolved checks, and a conservative line counting them as -100% | Dead or delisted tokens can't quietly disappear from the results |
+| Status of every check: not yet due, waiting, completed on time, completed late, unresolved (with reason) | Every enrolled token stays in the denominator; missing prices stay visible |
+| A conservative line counting unresolved checks as -100% | A stated assumption shown separately from observed returns, so dead tokens can't flatter the result |
+| Results by trigger (new-token feed vs recheck) | Where qualifying tokens come from. The populations overlap, so this is not a causal comparison |
+| Tokens in both cohorts | A control token that later qualifies keeps its control record; its eligible record starts at the later price |
 
 ### What would count as promising
 
