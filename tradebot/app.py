@@ -6,11 +6,12 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
-from tradebot.advisory_lock import AdvisoryLock
+from tradebot import verdict
+from tradebot.advisory_lock import AdvisoryLock, InterfaceError, PostgresError
 from tradebot.candidate_rendering import render_rejected_audit_rows
 from tradebot.config import Settings, load_settings
 from tradebot.db import Database
@@ -32,7 +33,7 @@ async def lifespan(app: FastAPI):
     scanner: ManagedScanner | None = None
     try:
         acquired = await lock.acquire()
-    except (OSError, TimeoutError, RuntimeError) as exc:
+    except (OSError, TimeoutError, RuntimeError, InterfaceError, PostgresError) as exc:
         lock.last_error_category = type(exc).__name__
         acquired = False
     if acquired:
@@ -123,7 +124,116 @@ async def healthz():
 
 @app.get("/")
 async def root():
-    return {"service": "tradebot-managed", "health": "/healthz"}
+    return RedirectResponse("/report", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+
+PAGE_STYLE = """body{font:16px system-ui;max-width:1100px;margin:0 auto;padding:1rem}
+nav a{margin-right:1rem}article{border:1px solid #ccc;border-radius:10px;padding:1rem;margin:1rem 0}
+.scroll{overflow-x:auto}table{border-collapse:collapse;font-size:14px}
+th,td{border-bottom:1px solid #ddd;padding:.3rem .5rem;text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}.bad{color:#b00020}.ok{color:#126b2f}
+.primary{background:#fff7d6}"""
+
+NAV = '<nav><a href="/report">Research report</a><a href="/candidates">Market watch</a></nav>'
+
+
+def _cell(value) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:+.1f}"
+    return html.escape(str(value))
+
+
+def _status_block(report: dict) -> str:
+    status = report["status"]
+    scanner = app.state.scanner_state
+    last_ok = status.get("last_ok_at")
+    last = status.get("last_cycle") or {}
+    attention = report["attention"]
+    if scanner.status != "active":
+        attention = [f"Scanner is {scanner.status} on this instance ({scanner.last_cycle_error or 'no error recorded'})."] + attention
+    items = "".join(f'<li class="bad">{html.escape(p)}</li>' for p in attention) or (
+        '<li class="ok">Nothing needs attention.</li>'
+    )
+    return f"""<article><h2>Status</h2>
+    <p>Last successful scan: <strong>{_cell(last_ok.strftime("%Y-%m-%d %H:%M UTC") if last_ok else None)}</strong>
+    · Last scan: {_cell(last.get("status"))} · Scans in 24h: {_cell(status.get("ok_24h"))} ok,
+    {_cell(status.get("errors_24h"))} failed · Version: {html.escape(app.state.settings.git_commit_sha[:12])}</p>
+    <ul>{items}</ul></article>"""
+
+
+async def _report(days: int) -> dict:
+    async with app.state.db.acquire() as conn:
+        return await verdict.collect_from_conn(conn, days)
+
+
+@app.get("/report", response_class=HTMLResponse)
+async def report_page(days: int = 7, _user: str = Depends(operator_auth)):
+    days = max(1, min(days, 90))
+    report = await _report(days)
+    throughput = report["throughput"]
+    day_rows = "".join(
+        "<tr>" + "".join(f"<td>{_cell(d.get(k, 0))}</td>" for k in (
+            "day", "cycles_ok", "cycles_error", "scored", "passed_hard_filters", "eligible",
+            "eligible_tokens_started", "control_tokens_started", "recheck_tokens",
+            "outcomes_completed", "outcomes_unresolved", "provider_errors")) + "</tr>"
+        for d in throughput["days"]
+    ) or '<tr><td colspan="12">No scans recorded in this period.</td></tr>'
+    reasons = "".join(
+        f"<tr><td>{html.escape(reason)}</td><td>{count}</td></tr>"
+        for reason, count in throughput["rejection_reasons"].items()
+    ) or '<tr><td colspan="2">None yet.</td></tr>'
+    summary = verdict.summary_rows(report["outcomes"])
+    shown = ("cohort", "horizon", "tokens", "observed", "unresolved", "pending", "median_pct",
+             "mean_pct", "pct_losing", "worst_pct", "mean_without_top_1",
+             "conservative_median_pct", "excess_vs_sol_median_pct", "after_2pct_median",
+             "first_half_n", "first_half_median", "second_half_n", "second_half_median")
+    outcome_rows = "".join(
+        f'<tr class="{"primary" if row["primary"] else ""}">'
+        + "".join(f"<td>{_cell(row[k])}</td>" for k in shown) + "</tr>"
+        for row in summary
+    ) or f'<tr><td colspan="{len(shown)}">No outcomes recorded yet.</td></tr>'
+    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Tradebot Research Report</title><style>{PAGE_STYLE}</style></head><body>{NAV}
+    <h1>Research report: {html.escape(verdict.STRATEGY_VERSION)}</h1>
+    <p>Market-price research only. Returns are Dexscreener price changes, not executable trades.
+    Unresolved checks have no price; they count as -100% only in the conservative column.</p>
+    {_status_block(report)}
+    <p><a href="/report/summary.csv?days={days}">Download summary CSV</a> ·
+    <a href="/report/observations.csv">Download observations CSV</a> ·
+    Period: <a href="/report?days=7">7 days</a> <a href="/report?days=30">30 days</a></p>
+    <h2>Outcomes (primary horizon highlighted)</h2><div class="scroll"><table>
+    <tr>{"".join(f"<th>{html.escape(k)}</th>" for k in shown)}</tr>{outcome_rows}</table></div>
+    <h2>Collection, last {days} days</h2><div class="scroll"><table>
+    <tr><th>day</th><th>scans ok</th><th>failed</th><th>scored</th><th>passed hard filters</th>
+    <th>eligible</th><th>eligible started</th><th>control started</th><th>rechecked</th>
+    <th>checks done</th><th>unresolved</th><th>provider errors</th></tr>{day_rows}</table></div>
+    <h2>Rejection reasons, last {days} days</h2><p>One token can fail several rules.</p>
+    <div class="scroll"><table><tr><th>reason</th><th>count</th></tr>{reasons}</table></div>
+    </body></html>""")
+
+
+def _csv_response(body: str, name: str) -> Response:
+    return Response(
+        body,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@app.get("/report/summary.csv")
+async def report_summary_csv(days: int = 7, _user: str = Depends(operator_auth)):
+    report = await _report(max(1, min(days, 90)))
+    body = verdict.to_csv(verdict.summary_rows(report["outcomes"]), verdict.SUMMARY_COLUMNS)
+    return _csv_response(body, f"tradebot-summary-{verdict.STRATEGY_VERSION}.csv")
+
+
+@app.get("/report/observations.csv")
+async def report_observations_csv(_user: str = Depends(operator_auth)):
+    report = await _report(7)
+    body = verdict.to_csv(report["observations"], verdict.OBSERVATION_COLUMNS)
+    return _csv_response(body, f"tradebot-observations-{verdict.STRATEGY_VERSION}.csv")
 
 
 async def _queue_rows() -> tuple[list[dict], list[dict]]:
@@ -193,7 +303,7 @@ async def candidates_dashboard(_user: str = Depends(operator_auth)):
     audit = render_rejected_audit_rows(audit_rows)
     return HTMLResponse(f"""<!doctype html><html><head><title>Tradebot Market Watch</title>
     <style>body{{font:16px system-ui;max-width:960px;margin:2rem auto;padding:1rem}}article{{border:1px solid #ccc;border-radius:10px;padding:1rem;margin:1rem 0}}</style></head>
-    <body><h1>Daily Market Watch</h1><p>Market-screening research only. Not a trade recommendation or executable return.</p>
+    <body>{NAV}<h1>Daily Market Watch</h1><p>Market-screening research only. Not a trade recommendation or executable return.</p>
     <p><button onclick="pause(true)">Pause research</button> <button onclick="pause(false)">Resume research</button></p>{content}
     <h2>Rejected and expired audit history</h2><ul>{audit}</ul>
     <script>async function decide(id,action){{let note=prompt('Optional note')||null;let r=await fetch('/api/candidates/'+id+'/decision',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{action,note}})}});if(r.ok)location.reload();else alert('Decision failed');}}

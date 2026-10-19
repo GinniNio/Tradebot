@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -26,6 +26,7 @@ class PersistenceConn:
         self.snapshot_count = 0
         self.json_values = []
         self.promoted = False
+        self.experiment_keys = []
 
     def transaction(self):
         return Transaction()
@@ -57,10 +58,13 @@ class PersistenceConn:
             return self.recent
         raise AssertionError(query)
 
-    async def execute(self, query, *_args):
+    async def execute(self, query, *args):
         if "UPDATE research_candidates SET state='eligible'" in query:
             self.promoted = True
             return "UPDATE 1"
+        if "INSERT INTO outcome_checks" in query:
+            self.experiment_keys.append(args[0])
+            return "INSERT 0 1"
         raise AssertionError(query)
 
 
@@ -96,6 +100,9 @@ async def test_jsonb_persistence_and_cooldown_preserve_later_eligible_observatio
     assert conn.source_count == 2
     assert conn.snapshot_count == 2
     assert conn.promoted is True
+    # Measurement starts at the later, first eligible observation.
+    assert [key.rsplit(":", 1)[1] for key in conn.experiment_keys] == ["1h", "24h", "3d", "7d"]
+    assert all(":eligible:token:" in key for key in conn.experiment_keys)
     assert conn.json_values and all(
         isinstance(value, str) for value in conn.json_values
     )
@@ -133,14 +140,14 @@ class DecisionConn:
             "id": uuid4(),
             "strategy_version_id": uuid4(),
             "state": "rejected",
-            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
             "candidate_rank": 1,
         },
         {
             "id": uuid4(),
             "strategy_version_id": uuid4(),
             "state": "eligible",
-            "expires_at": datetime.now(timezone.utc) - timedelta(seconds=1),
+            "expires_at": datetime.now(UTC) - timedelta(seconds=1),
             "candidate_rank": 1,
         },
     ],
@@ -158,7 +165,7 @@ async def test_decision_captures_baseline_and_schedules_four_outcomes():
         "id": uuid4(),
         "strategy_version_id": uuid4(),
         "state": "eligible",
-        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+        "expires_at": datetime.now(UTC) + timedelta(hours=1),
         "candidate_rank": 1,
     }
     baseline = {"id": uuid4(), "price_usd": Decimal("1.25")}

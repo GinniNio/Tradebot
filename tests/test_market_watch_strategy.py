@@ -83,3 +83,13 @@ def test_normalization_retains_raw_payload():
 @pytest.mark.parametrize("value", [None, 0, "0", "-1", "nan", "inf", "bad"])
 def test_invalid_outcome_prices_never_produce_a_value(value):
     assert valid_price(value) is None
+
+
+@pytest.mark.parametrize("bad", [None, "", "abc", "NaN", "Infinity", "-Infinity", [], {}])
+def test_missing_or_malformed_provider_field_rejects_instead_of_crashing(bad):
+    # Dexscreener omits priceChange.h1 on very young pairs. That used to raise
+    # decimal.InvalidOperation and abort the rest of the discovery cycle.
+    result = evaluate(passing_snapshot(price_change_1h_pct=bad))
+
+    assert result["eligible"] is False
+    assert "1-hour price change exceeds +25%" in result["rejection_reasons"]

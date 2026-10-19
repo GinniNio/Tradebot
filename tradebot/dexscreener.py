@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -52,7 +52,7 @@ class DexscreenerClient:
                     finally:
                         if self.session is None:
                             await session.close()
-            except (aiohttp.ClientError, asyncio.TimeoutError, ProviderError) as exc:
+            except (TimeoutError, aiohttp.ClientError, ProviderError) as exc:
                 if attempt >= self.budget.max_retries:
                     raise ProviderError(type(exc).__name__) from exc
                 await asyncio.sleep(min(4.0, 0.25 * (2**attempt)))
@@ -77,6 +77,37 @@ class DexscreenerClient:
             if isinstance(payload, list)
             else []
         )
+
+    async def pairs_batch(self, pair_addresses: list[str]) -> dict[str, dict[str, Any]]:
+        """Fetch up to 30 pairs per request. Pairs absent from the reply are absent here."""
+        found: dict[str, dict[str, Any]] = {}
+        unique = list(dict.fromkeys(a for a in pair_addresses if a))
+        for start in range(0, len(unique), 30):
+            chunk = unique[start : start + 30]
+            payload = await self.get_json(f"/latest/dex/pairs/solana/{','.join(chunk)}")
+            pairs = payload.get("pairs") if isinstance(payload, dict) else None
+            for item in pairs or []:
+                if isinstance(item, dict) and item.get("pairAddress"):
+                    found[item["pairAddress"]] = item
+        return found
+
+    async def sol_price_usd(self, wsol_mint: str) -> Decimal | None:
+        payload = await self.get_json(f"/tokens/v1/solana/{wsol_mint}")
+        pairs = [
+            p
+            for p in (payload if isinstance(payload, list) else [])
+            if isinstance(p, dict)
+            and (p.get("baseToken") or {}).get("address") == wsol_mint
+            and (p.get("quoteToken") or {}).get("symbol") in {"USDC", "USDT"}
+        ]
+        best = select_pair(pairs)
+        if not best:
+            return None
+        try:
+            price = Decimal(str(best["priceUsd"]))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        return price if price.is_finite() and price > 0 else None
 
     async def pair(self, pair_address: str) -> dict[str, Any]:
         payload = await self.get_json(f"/latest/dex/pairs/solana/{pair_address}")
@@ -126,6 +157,6 @@ def normalize_pair(pair: dict[str, Any]) -> dict[str, Any]:
         "price_change_6h_pct": value("priceChange", "h6"),
         "market_cap_usd": pair.get("marketCap"),
         "fdv_usd": pair.get("fdv"),
-        "captured_at": datetime.now(timezone.utc),
+        "captured_at": datetime.now(UTC),
         "raw_payload_json": pair,
     }
