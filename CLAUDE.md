@@ -141,6 +141,13 @@ Legacy strategy dispositions (from `docs/SOLO_OPERATOR_SCOPE.md` and the May–J
 
 The flat files at the repo root (`main.py`, `run_all.py`, `server.py`, `config.py`, `database.py`, the `*_tracker.py` modules, `jupiter_client.py`, `helius_client.py`, `birdeye_client.py`, `static/`) are the May–July Windows bot. It is not running (no process, no scheduled task, as checked on 2026-10-19), and the managed service must not import it (`tests/test_app_imports.py`).
 
-Its data lives on Kaye's PC in `C:\Dev\Tradebot\Tradebot`: `tradebot.db` plus `tradebot.db-wal` (keep them together), a second copy `tradebot-DESKTOP-2HRBHH4.db` from another machine, uncommitted edits to `dexscreener_client.py` and `swing_tracker.py`, and sync-conflict `-Andor` files. **A complete backup of those files was not confirmed as of 2026-10-19.** Legacy outcomes are a comparison cohort only and are never mixed with managed-service results. `OPERATIONS_MANUAL.md`, `HOW_THE_BOT_WORKS.md` and `TRADEBOT_CHEAT_SHEET.pdf` describe the legacy bot.
+Its data is **backed up (2026-10-19 11:26 local)**: byte-identical raw copies plus a clean single-file `-snapshot.db` per database (integrity ok), the uncommitted code edits as a patch, and untracked files. Local: `C:\Dev\Tradebot-backup-20261019-1126`. OneDrive: `Tradebot-backups\tradebot-legacy-20261019-1126.zip` (111.3 MB, no `.env`). The originals in `C:\Dev\Tradebot\Tradebot` are no longer needed.
+
+| Database | Ran until | signal_outcomes (live) |
+|---|---|---|
+| `tradebot.db` (main) | 2026-09-09 | launch_momentum 4,924; zombie_revival 290; zombie_revival_v2 56; swing_quality 4 |
+| `tradebot-DESKTOP-2HRBHH4.db` (other PC) | 2026-07-19 | launch_momentum 577; zombie_revival 373; zombie_revival_v2 75 |
+
+The two have **diverged**: the other PC's copy holds zombie outcomes that the main one lacks. Neither is complete. Merge them only if the zombie or launch research is ever reopened, and de-duplicate by token and time, because signal ids collide. Legacy outcomes are a comparison cohort only and are never mixed with managed-service results. `OPERATIONS_MANUAL.md`, `HOW_THE_BOT_WORKS.md` and `TRADEBOT_CHEAT_SHEET.pdf` describe the legacy bot.
 
 Development on either laptop: keep a separate git clone outside OneDrive (for example `C:\Dev\Tradebot\Tradebot-rebuild`), pull before working, push via PR.
