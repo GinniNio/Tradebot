@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from tradebot.verdict import (
@@ -11,7 +11,7 @@ from tradebot.verdict import (
     to_csv,
 )
 
-T0 = datetime(2026, 10, 20, tzinfo=timezone.utc)
+T0 = datetime(2026, 10, 20, tzinfo=UTC)
 
 
 def row(token, change=None, status="completed", resolution="observed", kind="24h", cohort="eligible", day=0):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -52,7 +52,7 @@ class DexscreenerClient:
                     finally:
                         if self.session is None:
                             await session.close()
-            except (aiohttp.ClientError, asyncio.TimeoutError, ProviderError) as exc:
+            except (TimeoutError, aiohttp.ClientError, ProviderError) as exc:
                 if attempt >= self.budget.max_retries:
                     raise ProviderError(type(exc).__name__) from exc
                 await asyncio.sleep(min(4.0, 0.25 * (2**attempt)))
@@ -157,6 +157,6 @@ def normalize_pair(pair: dict[str, Any]) -> dict[str, Any]:
         "price_change_6h_pct": value("priceChange", "h6"),
         "market_cap_usd": pair.get("marketCap"),
         "fdv_usd": pair.get("fdv"),
-        "captured_at": datetime.now(timezone.utc),
+        "captured_at": datetime.now(UTC),
         "raw_payload_json": pair,
     }

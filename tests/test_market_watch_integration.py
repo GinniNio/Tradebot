@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -140,14 +140,14 @@ class DecisionConn:
             "id": uuid4(),
             "strategy_version_id": uuid4(),
             "state": "rejected",
-            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
             "candidate_rank": 1,
         },
         {
             "id": uuid4(),
             "strategy_version_id": uuid4(),
             "state": "eligible",
-            "expires_at": datetime.now(timezone.utc) - timedelta(seconds=1),
+            "expires_at": datetime.now(UTC) - timedelta(seconds=1),
             "candidate_rank": 1,
         },
     ],
@@ -165,7 +165,7 @@ async def test_decision_captures_baseline_and_schedules_four_outcomes():
         "id": uuid4(),
         "strategy_version_id": uuid4(),
         "state": "eligible",
-        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+        "expires_at": datetime.now(UTC) + timedelta(hours=1),
         "candidate_rank": 1,
     }
     baseline = {"id": uuid4(), "price_usd": Decimal("1.25")}

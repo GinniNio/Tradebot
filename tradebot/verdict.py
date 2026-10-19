@@ -26,7 +26,7 @@ import json
 import os
 import statistics
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -130,7 +130,7 @@ def _describe(values: list[float]) -> dict[str, Any]:
 
 
 def summarize_outcomes(rows: list[Any], now: datetime | None = None) -> dict[str, Any]:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     groups: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
         group = groups.setdefault(
@@ -276,7 +276,7 @@ STALE_SCAN_AFTER = timedelta(minutes=45)
 
 
 def scan_attention(status: dict[str, Any], now: datetime | None = None) -> list[str]:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     problems = []
     last_ok = status.get("last_ok_at")
     if last_ok is None:

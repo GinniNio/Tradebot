@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -363,7 +363,7 @@ class MarketWatchService:
             checks = await ResearchQueue(conn).claim_due_outcome_checks(60)
         if not checks:
             return
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         live = []
         for check in checks:
             if now > self._window_closes(check):
@@ -423,7 +423,7 @@ class MarketWatchService:
         return scheduled + tolerance
 
     async def _retry_or_close(self, check: Any, reason: str, stats: dict[str, Any]) -> None:
-        next_attempt = datetime.now(timezone.utc) + experiment.RETRY_DELAY
+        next_attempt = datetime.now(UTC) + experiment.RETRY_DELAY
         if next_attempt > self._window_closes(check):
             await self._close(check, reason, stats)
             return
