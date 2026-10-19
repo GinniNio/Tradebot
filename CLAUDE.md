@@ -1,6 +1,6 @@
 # Tradebot — Project Briefing for Claude
 
-Read this first. It says what is running, where it lives, how changes ship, and what not to touch.
+Read this first. It says what is running, where it lives, how changes ship, and what not to touch. A plain-language explanation of the flow, the scoring model and how edge is judged is in `docs/HOW_IT_WORKS.md`.
 
 ## What this is
 

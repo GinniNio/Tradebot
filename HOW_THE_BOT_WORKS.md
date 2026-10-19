@@ -1,3 +1,5 @@
+> **Legacy document.** This describes the retired Windows bot (May to September 2026). The current service is described in [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md).
+
 # How Tradebot Works
 
 > **Authoritative scope:** Tradebot is a research-only Solana candidate-intelligence system. It scans, checks, researches, ranks and records operator picks as shadow positions. It does not autonomously trade real money. See [Solo Operator Scope](docs/SOLO_OPERATOR_SCOPE.md).
