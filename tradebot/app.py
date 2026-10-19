@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import html
+import os
 import secrets
 from contextlib import asynccontextmanager
 from uuid import UUID
@@ -22,6 +25,23 @@ from tradebot.repository import InvalidCandidateTransition, Repository
 from tradebot.scanner import ManagedScanner, ScannerState
 from tradebot.serialization import api_value
 
+# How often a standby instance retries the scanner lock. During a deploy the
+# old instance holds it until Render stops it; without retries the new
+# instance would stay in standby and nothing would scan.
+LOCK_RETRY_SECONDS = float(os.environ.get("SCANNER_LOCK_RETRY_SECONDS", "30"))
+
+
+async def _try_lock(lock: AdvisoryLock) -> bool:
+    lock.last_error_category = None
+    try:
+        acquired = await lock.acquire()
+    except (OSError, TimeoutError, RuntimeError, InterfaceError, PostgresError) as exc:
+        lock.last_error_category = type(exc).__name__
+        acquired = False
+    if not acquired:
+        await lock.release()
+    return acquired
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,36 +50,52 @@ async def lifespan(app: FastAPI):
     await db.connect()
     scanner_state = ScannerState()
     lock = AdvisoryLock(settings)
-    scanner: ManagedScanner | None = None
-    try:
-        acquired = await lock.acquire()
-    except (OSError, TimeoutError, RuntimeError, InterfaceError, PostgresError) as exc:
-        lock.last_error_category = type(exc).__name__
-        acquired = False
-    if acquired:
-        market_watch = MarketWatchService(
-            db, DexscreenerClient(settings.dexscreener.budget), settings.git_commit_sha
-        )
-        scanner = ManagedScanner(
-            scanner_state, market_watch.run_cycle, settings.scanner_interval_seconds
-        )
-        scanner.start()
-    else:
-        scanner_state.status = "standby"
-        if lock.last_error_category:
-            scanner_state.last_cycle_error = f"lock_error:{lock.last_error_category}"
-        await lock.release()
     app.state.settings = settings
     app.state.db = db
     app.state.scanner_state = scanner_state
     app.state.scanner_lock = lock
-    app.state.scanner = scanner
+    app.state.scanner = None
+
+    def start_scanner() -> None:
+        market_watch = MarketWatchService(
+            db, DexscreenerClient(settings.dexscreener.budget), settings.git_commit_sha
+        )
+        scanner_state.last_cycle_error = None
+        app.state.scanner = ManagedScanner(
+            scanner_state, market_watch.run_cycle, settings.scanner_interval_seconds
+        )
+        app.state.scanner.start()
+
+    def mark_standby() -> None:
+        scanner_state.status = "standby"
+        scanner_state.last_cycle_error = (
+            f"lock_error:{lock.last_error_category}" if lock.last_error_category else None
+        )
+
+    async def wait_for_lock() -> None:
+        while True:
+            await asyncio.sleep(LOCK_RETRY_SECONDS)
+            if await _try_lock(lock):
+                start_scanner()
+                return
+            mark_standby()
+
+    standby_task: asyncio.Task | None = None
+    if await _try_lock(lock):
+        start_scanner()
+    else:
+        mark_standby()
+        standby_task = asyncio.create_task(wait_for_lock(), name="scanner_lock_retry")
     try:
         yield
     finally:
         try:
-            if scanner:
-                await scanner.shutdown(timeout_seconds=5.0)
+            if standby_task and not standby_task.done():
+                standby_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await standby_task
+            if app.state.scanner:
+                await app.state.scanner.shutdown(timeout_seconds=5.0)
         finally:
             try:
                 await lock.release()
