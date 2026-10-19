@@ -38,7 +38,7 @@ Startup (`tradebot/app.py` lifespan):
 1. The container runs `alembic upgrade head`, then uvicorn (`Dockerfile`). A failed migration stops the new instance; Render keeps the previous one.
 2. `load_settings()` validates env (`tradebot/config.py`).
 3. `Database.connect()` retries transient errors at 1/2/4/8 s (`tradebot/db.py`).
-4. `AdvisoryLock` connects with `SCANNER_LOCK_DATABASE_URL` and takes a Postgres advisory lock, so only one scanner runs across deploy overlap. On failure the instance stays up in `standby` and does not scan.
+4. `AdvisoryLock` connects with `SCANNER_LOCK_DATABASE_URL` and takes a Postgres advisory lock, so only one scanner runs across deploy overlap. If another instance holds it (normal during a deploy) or the connection fails, the instance stays up in `standby` and retries every `SCANNER_LOCK_RETRY_SECONDS` (default 30), starting the scanner once it gets the lock.
 5. `ManagedScanner` runs `MarketWatchService.run_cycle` every `SCANNER_INTERVAL_SECONDS` (default 900).
 
 Each cycle (`tradebot/market_watch.py`) writes one `scan_cycles` row with counts and rejection reasons, then:
