@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
-from tradebot.advisory_lock import AdvisoryLock
+from tradebot.advisory_lock import AdvisoryLock, InterfaceError, PostgresError
 from tradebot.candidate_rendering import render_rejected_audit_rows
 from tradebot.config import Settings, load_settings
 from tradebot.db import Database
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     scanner: ManagedScanner | None = None
     try:
         acquired = await lock.acquire()
-    except (OSError, TimeoutError, RuntimeError) as exc:
+    except (OSError, TimeoutError, RuntimeError, InterfaceError, PostgresError) as exc:
         lock.last_error_category = type(exc).__name__
         acquired = False
     if acquired:
