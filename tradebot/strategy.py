@@ -84,6 +84,27 @@ def evaluate(
     ]
     rejects.extend(reason for failed, reason in checks if failed)
     passed_hard_filters = not rejects
+    # Reporting only, no effect on the decision: which inputs were absent or
+    # unparseable, so a rejection caused by missing data can be told apart
+    # from a genuine failure of the rule.
+    missing_inputs = [
+        name
+        for name, value in (
+            ("liquidity_usd", liquidity),
+            ("volume_24h_usd", volume_24h),
+            ("market_cap_or_fdv_usd", market_cap),
+            ("price_change_24h_pct", change_24h),
+            ("price_change_1h_pct", change_1h),
+        )
+        if value is None
+    ]
+    reason_inputs = dict(
+        zip(
+            (reason for _failed, reason in checks),
+            ("liquidity_usd", "volume_24h_usd", "market_cap_or_fdv_usd",
+             "price_change_24h_pct", "price_change_1h_pct"),
+        )
+    )
 
     liquidity_score = (
         Decimal(0)
@@ -125,6 +146,11 @@ def evaluate(
     return {
         "eligible": not rejects,
         "passed_hard_filters": passed_hard_filters,
+        "missing_inputs": missing_inputs,
+        "rejection_details": [
+            {"reason": reason, "missing_input": reason_inputs.get(reason) in missing_inputs}
+            for reason in rejects
+        ],
         "score": score,
         "score_inputs": {"turnover_24h": turnover, "volume_acceleration": acceleration},
         "score_components": components,

@@ -42,7 +42,11 @@ def new_stats() -> dict[str, Any]:
         "outcomes_completed": 0,
         "outcomes_retried": 0,
         "outcomes_unresolved": 0,
+        "recheck_universe": 0,
+        # Rule failures where the input was present, and rejections caused by a
+        # missing or unparseable input, kept apart.
         "rejection_reasons": {},
+        "missing_inputs": {},
     }
 
 
@@ -105,9 +109,9 @@ class MarketWatchService:
         stats["scored"] += 1
         stats["passed_hard_filters"] += bool(result["passed_hard_filters"])
         stats["eligible"] += bool(result["eligible"])
-        reasons = stats["rejection_reasons"]
-        for reason in result["rejection_reasons"]:
-            reasons[reason] = reasons.get(reason, 0) + 1
+        for detail in result["rejection_details"]:
+            bucket = stats["missing_inputs" if detail["missing_input"] else "rejection_reasons"]
+            bucket[detail["reason"]] = bucket.get(detail["reason"], 0) + 1
 
     async def _strategy_id(self, conn: Any) -> Any:
         return await conn.fetchval(
@@ -151,7 +155,8 @@ class MarketWatchService:
         async with self.db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT token_address,
-                    (array_agg(selected_pair ORDER BY created_at DESC))[1] AS pair_address
+                    (array_agg(selected_pair ORDER BY created_at DESC))[1] AS pair_address,
+                    count(*) OVER () AS universe
                 FROM research_candidates WHERE selected_pair IS NOT NULL
                 GROUP BY token_address
                 HAVING min(created_at) BETWEEN now() - $1::interval AND now() - $2::interval
@@ -162,6 +167,7 @@ class MarketWatchService:
                 experiment.RECHECK_TOKENS_PER_CYCLE,
             )
         stats["recheck_tokens"] += len(rows)
+        stats["recheck_universe"] = int(rows[0]["universe"]) if rows else 0
         try:
             pairs = await self.client.pairs_batch([r["pair_address"] for r in rows])
         except ProviderError:
@@ -239,7 +245,7 @@ class MarketWatchService:
                         json_text(result["explanations"]),
                     )
                 await self._start_experiment(
-                    conn, recent["id"], snapshot_id, strategy_id, snap, result, sol_price, stats
+                    conn, recent["id"], snapshot_id, strategy_id, snap, result, sol_price, stats, source
                 )
                 return result
             candidate_key = hashlib.sha256(
@@ -264,7 +270,7 @@ class MarketWatchService:
                 conn, candidate_id, source_id, snap, pair
             )
             await self._start_experiment(
-                conn, candidate_id, snapshot_id, strategy_id, snap, result, sol_price, stats
+                conn, candidate_id, snapshot_id, strategy_id, snap, result, sol_price, stats, source
             )
         return result
 
@@ -278,6 +284,7 @@ class MarketWatchService:
         result: dict[str, Any],
         sol_price: Decimal | None,
         stats: dict[str, Any],
+        source: str = "profile_feed",
     ) -> None:
         """Measure from the first qualifying observation of each token, once.
 
@@ -311,8 +318,8 @@ class MarketWatchService:
             status = await conn.execute(
                 """INSERT INTO outcome_checks (idempotency_key,candidate_id,check_kind,due_at,
                 scheduled_at,status,outcome_method,baseline_market_snapshot_id,baseline_price_usd,
-                cohort,strategy_version_id,token_address,sol_baseline_price_usd)
-                VALUES ($1,$2,$3,$4,$4,'pending','dexscreener_market_price',$5,$6,$7,$8,$9,$10)
+                cohort,strategy_version_id,token_address,sol_baseline_price_usd,trigger_source)
+                VALUES ($1,$2,$3,$4,$4,'pending','dexscreener_market_price',$5,$6,$7,$8,$9,$10,$11)
                 ON CONFLICT (idempotency_key) DO NOTHING""",
                 f"exp:{strategy_id}:{cohort}:{snap['token_address']}:{kind}",
                 candidate_id,
@@ -324,6 +331,7 @@ class MarketWatchService:
                 strategy_id,
                 snap["token_address"],
                 sol_price,
+                source,
             )
             inserted += str(status).endswith(" 1")
         if inserted:
