@@ -13,5 +13,8 @@ COPY alembic ./alembic
 COPY tradebot ./tradebot
 COPY docs ./docs
 
-CMD ["uvicorn", "tradebot.app:app", "--host", "0.0.0.0", "--port", "10000"]
+# Apply pending migrations before starting, so new code never runs against an
+# old schema. Migrations are additive; if one fails the new instance does not
+# start and Render keeps serving the previous deploy.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn tradebot.app:app --host 0.0.0.0 --port 10000"]
 

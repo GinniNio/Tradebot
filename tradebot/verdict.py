@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
+import io
 import json
 import os
 import statistics
@@ -255,17 +257,138 @@ def render_text(throughput: dict[str, Any], outcomes: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-async def collect(database_url: str, days: int) -> tuple[dict[str, Any], dict[str, Any]]:
+SCAN_STATUS_SQL = """
+SELECT
+    (SELECT max(finished_at) FROM scan_cycles WHERE status = 'ok') AS last_ok_at,
+    (SELECT row_to_json(c) FROM (
+        SELECT status, error, started_at, finished_at FROM scan_cycles
+        ORDER BY started_at DESC LIMIT 1) c) AS last_cycle,
+    (SELECT count(*) FROM scan_cycles
+     WHERE status = 'ok' AND started_at > now() - interval '24 hours') AS ok_24h,
+    (SELECT count(*) FROM scan_cycles
+     WHERE status = 'error' AND started_at > now() - interval '24 hours') AS errors_24h,
+    (SELECT count(*) FROM outcome_checks
+     WHERE status IN ('pending','retryable') AND due_at < now() - interval '30 minutes') AS overdue_checks
+"""
+
+# A healthy scanner finishes a cycle every 15 minutes; three missed cycles is a problem.
+STALE_SCAN_AFTER = timedelta(minutes=45)
+
+
+def scan_attention(status: dict[str, Any], now: datetime | None = None) -> list[str]:
+    now = now or datetime.now(timezone.utc)
+    problems = []
+    last_ok = status.get("last_ok_at")
+    if last_ok is None:
+        problems.append("No successful scan recorded yet.")
+    elif now - last_ok > STALE_SCAN_AFTER:
+        minutes = int((now - last_ok).total_seconds() // 60)
+        problems.append(f"Last successful scan was {minutes} minutes ago.")
+    last = status.get("last_cycle") or {}
+    if last.get("status") == "error":
+        problems.append(f"Most recent scan failed: {last.get('error') or 'unknown error'}.")
+    if status.get("errors_24h"):
+        problems.append(f"{status['errors_24h']} failed scans in the last 24 hours.")
+    if status.get("overdue_checks"):
+        problems.append(f"{status['overdue_checks']} price checks are more than 30 minutes overdue.")
+    return problems
+
+
+async def collect_from_conn(conn: Any, days: int) -> dict[str, Any]:
+    throughput_rows = await conn.fetch(THROUGHPUT_SQL, STRATEGY_VERSION, timedelta(days=days))
+    outcome_rows = list(await conn.fetch(OUTCOMES_SQL, STRATEGY_VERSION))
+    status_row = await conn.fetchrow(SCAN_STATUS_SQL)
+    status = dict(status_row) if status_row else {}
+    if isinstance(status.get("last_cycle"), str):
+        status["last_cycle"] = json.loads(status["last_cycle"])
+    return {
+        "status": status,
+        "attention": scan_attention(status),
+        "throughput": summarize_throughput(list(throughput_rows)),
+        "outcomes": summarize_outcomes(outcome_rows),
+        "observations": outcome_rows,
+    }
+
+
+async def collect(database_url: str, days: int) -> dict[str, Any]:
     import asyncpg
 
     # asyncpg wants a plain libpq URL; Alembic-style driver suffixes are dropped.
     conn = await asyncpg.connect(dsn=database_url.replace("postgresql+psycopg://", "postgresql://", 1))
     try:
-        throughput_rows = await conn.fetch(THROUGHPUT_SQL, STRATEGY_VERSION, timedelta(days=days))
-        outcome_rows = await conn.fetch(OUTCOMES_SQL, STRATEGY_VERSION)
+        return await collect_from_conn(conn, days)
     finally:
         await conn.close()
-    return summarize_throughput(list(throughput_rows)), summarize_outcomes(list(outcome_rows))
+
+
+SUMMARY_COLUMNS = (
+    "cohort", "horizon", "primary", "tokens", "observed", "unresolved", "pending",
+    "mean_pct", "median_pct", "pct_losing", "worst_pct", "best_pct",
+    "mean_without_top_1", "mean_without_top_2", "top_winner_share_of_gains",
+    "conservative_mean_pct", "conservative_median_pct",
+    "sol_median_pct", "excess_vs_sol_mean_pct", "excess_vs_sol_median_pct",
+    "after_2pct_mean", "after_2pct_median", "after_5pct_mean", "after_5pct_median",
+    "first_half_n", "first_half_median", "second_half_n", "second_half_median",
+    "exits_below_1000_liquidity",
+)
+
+
+def summary_rows(outcomes: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for key, item in outcomes.items():
+        cohort, horizon = key.split("/", 1)
+        o = item["observed"]
+        c = item["conservative_unresolved_as_minus_100"]
+        costs = item["after_costs"]
+        first, second = item["halves"]
+        rows.append({
+            "cohort": cohort,
+            "horizon": horizon,
+            "primary": item["primary"],
+            "tokens": item["tokens"],
+            "observed": o["n"],
+            "unresolved": sum(item["unresolved"].values()),
+            "pending": item["pending"],
+            "mean_pct": o.get("mean"),
+            "median_pct": o.get("median"),
+            "pct_losing": o.get("pct_losing"),
+            "worst_pct": (o.get("worst") or [None])[0],
+            "best_pct": (o.get("best") or [None])[0],
+            "mean_without_top_1": o.get("mean_without_top_1"),
+            "mean_without_top_2": o.get("mean_without_top_2"),
+            "top_winner_share_of_gains": o.get("top_winner_share_of_gains"),
+            "conservative_mean_pct": c.get("mean"),
+            "conservative_median_pct": c.get("median"),
+            "sol_median_pct": item["sol_same_window"].get("median"),
+            "excess_vs_sol_mean_pct": item["excess_vs_sol"].get("mean"),
+            "excess_vs_sol_median_pct": item["excess_vs_sol"].get("median"),
+            "after_2pct_mean": costs["2pct_round_trip"].get("mean"),
+            "after_2pct_median": costs["2pct_round_trip"].get("median"),
+            "after_5pct_mean": costs["5pct_round_trip"].get("mean"),
+            "after_5pct_median": costs["5pct_round_trip"].get("median"),
+            "first_half_n": first["n"],
+            "first_half_median": first.get("median"),
+            "second_half_n": second["n"],
+            "second_half_median": second.get("median"),
+            "exits_below_1000_liquidity": item["low_exit_liquidity"],
+        })
+    return rows
+
+
+OBSERVATION_COLUMNS = (
+    "cohort", "check_kind", "token_address", "status", "resolution", "baseline_at",
+    "scheduled_at", "completed_at", "market_price_change_pct", "outcome_liquidity_usd",
+    "sol_baseline_price_usd", "sol_outcome_price_usd",
+)
+
+
+def to_csv(rows: list[Any], columns: tuple[str, ...]) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: ("" if row[k] is None else row[k]) for k in columns})
+    return buffer.getvalue()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -276,11 +399,14 @@ def main(argv: list[str] | None = None) -> int:
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if not database_url:
         parser.error("DATABASE_URL is required")
-    throughput, outcomes = asyncio.run(collect(database_url, args.days))
+    report = asyncio.run(collect(database_url, args.days))
     if args.json:
-        print(json.dumps({"throughput": throughput, "outcomes": outcomes}, default=str, indent=2))
+        report.pop("observations")
+        print(json.dumps(report, default=str, indent=2))
     else:
-        print(render_text(throughput, outcomes))
+        for problem in report["attention"]:
+            print(f"ATTENTION: {problem}")
+        print(render_text(report["throughput"], report["outcomes"]))
     return 0
 
 

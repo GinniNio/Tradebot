@@ -11,11 +11,14 @@ try:
 except ImportError:  # pragma: no cover - asyncpg is installed in managed deployments.
     InterfaceError = PostgresError = ()
 
+# Server-side TCP keepalives, so Postgres notices a dead scanner connection
+# and releases its advisory lock. asyncpg forwards DSN query parameters as
+# server settings: these are real Postgres settings. (The libpq client
+# options "keepalives*" are not, and stock Postgres rejects them.)
 KEEPALIVE_OPTIONS = {
-    "keepalives": "1",
-    "keepalives_idle": "15",
-    "keepalives_interval": "5",
-    "keepalives_count": "3",
+    "tcp_keepalives_idle": "15",
+    "tcp_keepalives_interval": "5",
+    "tcp_keepalives_count": "3",
 }
 
 

@@ -12,10 +12,10 @@ def test_lock_dsn_adds_required_keepalives():
     dsn = with_keepalives("postgresql://u:p@example.com/db?sslmode=require")
 
     assert "sslmode=require" in dsn
-    assert "keepalives=1" in dsn
-    assert "keepalives_idle=15" in dsn
-    assert "keepalives_interval=5" in dsn
-    assert "keepalives_count=3" in dsn
+    assert "tcp_keepalives_idle=15" in dsn
+    assert "tcp_keepalives_interval=5" in dsn
+    assert "tcp_keepalives_count=3" in dsn
+    assert "keepalives=1" not in dsn
 
 
 def _install_asyncpg_stub(monkeypatch, connect):

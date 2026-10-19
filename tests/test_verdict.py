@@ -1,7 +1,15 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from tradebot.verdict import render_text, summarize_outcomes, summarize_throughput
+from tradebot.verdict import (
+    SUMMARY_COLUMNS,
+    render_text,
+    scan_attention,
+    summarize_outcomes,
+    summarize_throughput,
+    summary_rows,
+    to_csv,
+)
 
 T0 = datetime(2026, 10, 20, tzinfo=timezone.utc)
 
@@ -72,3 +80,32 @@ def test_throughput_sums_cycle_stats_and_rejection_reasons():
     assert throughput["totals"]["cycles_error"] == 1
     assert throughput["rejection_reasons"] == {"Liquidity is below USD 50,000": 8}
     assert "Liquidity is below USD 50,000" in render_text(throughput, {})
+
+
+def test_attention_flags_stale_failed_and_overdue_scans():
+    now = T0 + timedelta(hours=2)
+    healthy = {"last_ok_at": now - timedelta(minutes=10), "last_cycle": {"status": "ok"}, "errors_24h": 0, "overdue_checks": 0}
+    assert scan_attention(healthy, now) == []
+
+    problems = scan_attention(
+        {"last_ok_at": now - timedelta(minutes=90), "last_cycle": {"status": "error", "error": "ProviderError"},
+         "errors_24h": 3, "overdue_checks": 2},
+        now,
+    )
+    assert problems == [
+        "Last successful scan was 90 minutes ago.",
+        "Most recent scan failed: ProviderError.",
+        "3 failed scans in the last 24 hours.",
+        "2 price checks are more than 30 minutes overdue.",
+    ]
+    assert scan_attention({}, now) == ["No successful scan recorded yet."]
+
+
+def test_summary_csv_has_one_row_per_cohort_and_horizon_with_blanks_for_missing():
+    rows = summary_rows(summarize_outcomes([row("a", 10), row("b", kind="1h", status="pending", resolution=None)]))
+    text = to_csv(rows, SUMMARY_COLUMNS)
+    lines = text.strip().splitlines()
+
+    assert lines[0].split(",") == list(SUMMARY_COLUMNS)
+    assert len(lines) == 3
+    assert lines[1].startswith("eligible,1h,False,1,0,0,1,,")

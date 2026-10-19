@@ -22,6 +22,10 @@ uvicorn tradebot.app:app --host 0.0.0.0 --port 10000
 
 Do not point Render at `main.py`, `server.py`, `run_all.py` or any legacy flat runtime module.
 
+The container runs `alembic upgrade head` before starting uvicorn, so each
+deploy applies its own migrations. If a migration fails, the new instance
+exits and Render keeps the previous deploy running.
+
 ## Environment
 
 Set these in Render environment configuration:
@@ -62,12 +66,8 @@ alembic upgrade head
 
 PR A does not import SQLite data. Legacy cohort export/import belongs to a later PR.
 
-Migration `0003_research_experiment` must be applied before the code that
-uses it starts scanning, otherwise every scan cycle fails on the missing
-`scan_cycles` table (the web service and `/healthz` still run). Set the
-service's Pre-Deploy Command to `alembic upgrade head`, or run it from the
-Render shell before deploying. `/healthz` shows the applied revision under
-`database.migration.revision`.
+The container applies migrations on start (see Render service above).
+`/healthz` shows the applied revision under `database.migration.revision`.
 
 ## Research experiment (market_watch_v2)
 
@@ -88,7 +88,10 @@ From `market_watch_v2` the scanner measures outcomes automatically:
 - Operator Watch/Reject decisions remain optional notes; they do not affect
   the experiment.
 
-Weekly report, from the Render shell or any machine with the Neon URL:
+Weekly report: open `/report` on the service URL (same dashboard login).
+It shows last successful scan, anything needing attention, outcomes,
+collection counts and rejection reasons, with summary and observations CSV
+downloads. `/` redirects there. The same report from a terminal:
 
 ```bash
 DATABASE_URL=<neon url> python -m tradebot.verdict           # last 7 days
