@@ -14,7 +14,7 @@ import pytest_asyncio
 
 from tradebot import experiment
 from tradebot.market_watch import MarketWatchService, new_stats
-from tradebot.verdict import OUTCOMES_SQL, summarize_outcomes
+from tradebot.verdict import OUTCOMES_SQL, collect_from_conn, summarize_outcomes
 
 pytestmark = [pytest.mark.postgres, pytest.mark.asyncio]
 
@@ -144,6 +144,7 @@ async def test_experiment_rules_end_to_end(db):
     assert len(rows) == 8
     assert all(r["scheduled_at"] == r["due_at"] for r in rows)
     assert all(r["sol_baseline_price_usd"] == Decimal(100) for r in rows)
+    assert {r["trigger_source"] for r in rows} == {"profile_feed"}
     async with db.acquire() as conn:
         cycle = await conn.fetchrow("SELECT * FROM scan_cycles")
     assert cycle["status"] == "ok"
@@ -208,6 +209,19 @@ async def test_experiment_rules_end_to_end(db):
     assert report["control/1h"]["unresolved"] == {"pair_missing": 1}
     assert report["control/1h"]["conservative_unresolved_as_minus_100"]["median"] == -100.0
     assert report["eligible/24h"]["primary"] is True
+    # Control history kept and the overlap identified through the real report query.
+    async with db.acquire() as conn:
+        full = await collect_from_conn(conn, 7)
+    assert full["overlap"]["tokens_in_both"] == 1 and full["overlap"]["tokens"] == [ctrl]
+    assert full["enrolment"]["control"]["total"] == 1
+    assert full["enrolment"]["eligible"] == {"total": 2, "profile_feed": 2}
+    # An entry recorded before trigger_source existed reads as "unknown", never inferred.
+    async with db.acquire() as conn:
+        await conn.execute("UPDATE outcome_checks SET trigger_source = NULL WHERE token_address = $1", elig)
+        legacy = await collect_from_conn(conn, 7)
+    assert legacy["enrolment"]["eligible"] == {"total": 2, "profile_feed": 1, "unknown": 1}
+    status = legacy["outcomes"]["eligible/24h"]["status"]
+    assert sum(status.values()) == legacy["outcomes"]["eligible/24h"]["tokens"]
 
 
 async def test_recheck_revisits_stored_tokens_and_stores_only_hard_passes(db):
@@ -238,6 +252,8 @@ async def test_recheck_revisits_stored_tokens_and_stores_only_hard_passes(db):
     assert stats["scored"] == 2 and stats["eligible"] == 1
     assert stats["rejection_reasons"]["Liquidity is below USD 50,000"] == 1
     assert {r["token_address"] for r in await checks(db)} == {old_ok}
+    assert {r["trigger_source"] for r in await checks(db)} == {"recheck"}
+    assert stats["recheck_universe"] == 2
     async with db.acquire() as conn:
         stored = await conn.fetch(
             "SELECT token_address, score_inputs_json FROM research_candidates WHERE score_inputs_json ? 'discovery_source'"
