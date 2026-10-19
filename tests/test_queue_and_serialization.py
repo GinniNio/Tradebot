@@ -11,7 +11,8 @@ from tradebot.serialization import api_value
 def test_due_work_claim_uses_postgres_skip_locked():
     sql = " ".join(CLAIM_DUE_OUTCOME_CHECKS_SQL.split())
 
-    assert "status = 'pending' AND due_at <= now()" in sql
+    assert "status IN ('pending', 'retryable') AND due_at <= now()" in sql
+    assert "claimed_at < now() - $2::interval" in sql
     assert "FOR UPDATE SKIP LOCKED" in sql
     assert "LIMIT $1" in sql
 

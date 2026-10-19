@@ -230,8 +230,8 @@ class Repository:
             ("7d", "7 days"),
         ):
             await self.conn.execute(
-                """INSERT INTO outcome_checks (idempotency_key,candidate_id,check_kind,due_at,status,outcome_method,baseline_market_snapshot_id,baseline_price_usd)
-                VALUES ($1,$2,$3,now()+$4::interval,'pending','dexscreener_market_price',$5,$6)
+                """INSERT INTO outcome_checks (idempotency_key,candidate_id,check_kind,due_at,scheduled_at,status,outcome_method,baseline_market_snapshot_id,baseline_price_usd)
+                VALUES ($1,$2,$3,now()+$4::interval,now()+$4::interval,'pending','dexscreener_market_price',$5,$6)
                 ON CONFLICT (idempotency_key) DO NOTHING""",
                 f"outcome:{candidate_id}:{kind}",
                 candidate_id,

@@ -62,6 +62,43 @@ alembic upgrade head
 
 PR A does not import SQLite data. Legacy cohort export/import belongs to a later PR.
 
+Migration `0003_research_experiment` must be applied before the code that
+uses it starts scanning, otherwise every scan cycle fails on the missing
+`scan_cycles` table (the web service and `/healthz` still run). Set the
+service's Pre-Deploy Command to `alembic upgrade head`, or run it from the
+Render shell before deploying. `/healthz` shows the applied revision under
+`database.migration.revision`.
+
+## Research experiment (market_watch_v2)
+
+From `market_watch_v2` the scanner measures outcomes automatically:
+
+- Every token's first qualifying observation (score >= 65) starts +1h,
+  +24h, +3d and +7d price checks from that observation's price. Once per
+  token. The primary horizon is 24h, fixed in `tradebot/experiment.py`.
+- A fixed hash-selected half of tokens that pass all five hard filters but
+  score below 65 are tracked the same way as the comparison cohort.
+- Each cycle also rechecks up to 300 tokens first seen 1-7 days ago, in
+  batches of 30 pairs per Dexscreener call. Rechecks that fail the hard
+  filters are counted but not stored.
+- A check with no valid price inside its tolerance window (1h: 15 min,
+  24h: 2 h, 3d: 6 h, 7d: 12 h) is closed as `unresolved` with a reason. No
+  price is ever invented for it.
+- Each cycle writes a `scan_cycles` row with counts and rejection reasons.
+- Operator Watch/Reject decisions remain optional notes; they do not affect
+  the experiment.
+
+Weekly report, from the Render shell or any machine with the Neon URL:
+
+```bash
+DATABASE_URL=<neon url> python -m tradebot.verdict           # last 7 days
+DATABASE_URL=<neon url> python -m tradebot.verdict --days 14 --json
+```
+
+The first review after seven full days is a collection checkpoint
+(throughput, rejection reasons, completed and unresolved checks), not a
+profitability verdict.
+
 ## Health and doctor
 
 Check the service:

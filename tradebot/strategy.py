@@ -27,7 +27,10 @@ class SwingQualityConfig:
 
 FROZEN_CONFIG = SwingQualityConfig()
 STRATEGY_KEY = "swing_quality"
-STRATEGY_VERSION = "market_watch_v1"
+# v2 keeps the v1 scoring thresholds unchanged. It differs only in discovery
+# (adds the 1-7 day stored-token recheck) and in automatic measurement, so its
+# outcomes must not be pooled with v1.
+STRATEGY_VERSION = "market_watch_v2"
 
 
 def _d(value: Any) -> Decimal | None:
@@ -80,6 +83,7 @@ def evaluate(
         ),
     ]
     rejects.extend(reason for failed, reason in checks if failed)
+    passed_hard_filters = not rejects
 
     liquidity_score = (
         Decimal(0)
@@ -120,6 +124,7 @@ def evaluate(
     ]
     return {
         "eligible": not rejects,
+        "passed_hard_filters": passed_hard_filters,
         "score": score,
         "score_inputs": {"turnover_24h": turnover, "volume_acceleration": acceleration},
         "score_components": components,
