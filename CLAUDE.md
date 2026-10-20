@@ -18,10 +18,11 @@ There is **one bot**: the managed service in `tradebot/`, hosted on Render with 
 
 Live URL: **https://tradebot-managed-staging.onrender.com** (dashboard login = `OPERATOR_DASHBOARD_USERNAME` / `OPERATOR_DASHBOARD_PASSWORD` in Render). Kaye uses it from either laptop in a browser. Routine use needs no terminal or database credentials.
 
-## Current status (2026-10-19)
+## Current status (2026-10-20)
 
-- Deployed: `e0f46b3` (PRs #8 and #9), migration `0003_research_experiment`, strategy version `market_watch_v2`.
-- Scanner active from the 06:11 UTC redeploy. **7-day collection checkpoint: about 2026-10-26**, once two scheduled cycles on this deploy are confirmed. That review is about throughput (qualifying tokens, rejection reasons, completed and unresolved checks), not profitability.
+- Deployed: `a8323f6` (PR #14), migration `0004_trigger_source`, strategy version `market_watch_v2`. Checked on `/healthz` at 18:07 UTC on 2026-10-20: scanner `active`, 135 cycles in the 33.8 h since the merge (one per 15 minutes), no cycle error, no overdue or failed checks.
+- **7-day collection checkpoint: 2026-10-26.** That review is about throughput (qualifying tokens, rejection reasons, completed and unresolved checks), not profitability. Read `python -m tradebot.verdict --days 7` and `python -m tradebot.checkpoint --days 7 --graduates` first.
+- v2 is frozen until then. A v3 proposal (established tokens, score tiers, Option A pool aggregation) is drafted in `docs/V3_SPEC_DRAFT.md` for that review; it is not approved or implemented.
 - Why v2 exists: in 30 days v1 scored 7,270 rows and found 1 eligible token and 5 score-only rejects, and outcomes were only measured after a manual dashboard click. A live sample on 2026-10-19 found the Dexscreener profile feed is almost all tokens under 10 hours old, and liquidity under $50k is the dominant rejection.
 - Decision rule after the checkpoint: if v2 still produces almost no qualifying tokens, change the discovery source or retire the experiment. Do not loosen filters to make numbers look active.
 
@@ -77,6 +78,7 @@ Before calling anything promising: the median and the mean must both hold up, re
 | `repository.py` | Candidate listing and operator decisions. |
 | `dexscreener.py` | Rate-budgeted client: discovery, pairs, batch pairs, SOL price. |
 | `verdict.py` | Report calculations, CSV, CLI. |
+| `checkpoint.py` | Read-only checkpoint CLI: score bands of stored passers, control score at enrolment, `--graduates` pool sizing on Dexscreener. Never reads returns. |
 | `health.py`, `doctor.py` | Health payload; one-off diagnostic CLI. |
 
 Migrations live in `alembic/versions/` (0001 foundation, 0002 market watch queue, 0003 research experiment, 0004 `outcome_checks.trigger_source`). They are additive. Tables: `strategy_versions`, `source_events`, `research_candidates`, `market_snapshots`, `candidate_decisions`, `outcome_checks`, `scan_cycles`, `operator_settings`, plus `quote_snapshots` and `evidence_items` (created, not yet written to).
@@ -107,6 +109,9 @@ Postgres tests locally: start a disposable Postgres 16, `alembic upgrade head`, 
 - **Dexscreener fields can be missing** (for example `priceChange.h1` on young pairs). `strategy._d` treats unparseable values as missing; keep it that way.
 - **Storage.** `source_events` and `market_snapshots` keep raw JSON for every stored observation. Rechecks store only hard-filter passes to keep Neon small.
 - `HEAD /` returns 405 in Render logs: Render's port probe. Harmless.
+- **One failed scan during a deploy that migrates.** During the #14 deploy one cycle failed with asyncpg `InvalidCachedStatementError`, then scans resumed on their own. Provisional explanation: the old instance's cached prepared statement went stale when the new instance's migration altered `outcome_checks`. Resumed scanning is shown; whether any work from that cycle was lost was not reconciled.
+- `/healthz` lists providers as `unavailable` when no API key is set. Dexscreener's public API needs none, so that line is not a fault.
+- Dexscreener `/tokens/v1/solana/{mints}` returns one pool per token; `/token-pairs/v1/solana/{mint}` returns all of them (checked 2026-10-20).
 
 ## Operating doctrine (locked)
 
@@ -133,7 +138,8 @@ Legacy strategy dispositions (from `docs/SOLO_OPERATOR_SCOPE.md` and the May–J
 - 2026-05-22 to 2026-07: legacy Windows bot research (zombie verdict 2026-05-28, graduation tracker 2026-06-05).
 - 2026-09-09/10: managed rebuild (PRs #2–#7): Render, Neon, market-watch queue, dashboard.
 - 2026-10-19: v1 audit (1 eligible in 30 days). PR #8: `market_watch_v2` automatic measurement, recheck, `/report` and CSVs, migrations on start. PR #9 plus a Render env fix: the scanner lock works again on Neon.
-- ~2026-10-26: 7-day collection checkpoint (throughput, not profitability).
+- 2026-10-19: PR #14 (`a8323f6`): report answers three questions, trigger source recorded, frozen eligibility golden test.
+- 2026-10-26: 7-day collection checkpoint (throughput, not profitability) and the v3 decision (`docs/V3_SPEC_DRAFT.md`).
 - 2026-12-24: last day to admit 7-day cohorts that must mature before the decision.
 - 2026-12-31: kill-criterion decision.
 
