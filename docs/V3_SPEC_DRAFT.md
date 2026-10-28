@@ -1,6 +1,11 @@
 # market_watch_v3: draft specification
 
-**Status: DRAFT for the 2026-10-26 checkpoint. Not approved, not implemented.** Nothing here changes `market_watch_v2`, which keeps running unchanged until Kaye decides. Adopting any part of this means a new `STRATEGY_VERSION`, a fresh evaluation period, and no pooling with v2.
+**Status: PARKED (2026-10-28). Not approved, not implemented.**
+
+- The checkpoint showed v2 finding tokens: 7 eligible and 39 control in its first week, all but two through the 1–7 day recheck.
+- That refutes this draft's main premise, that v2 cannot find tokens. v2 keeps running unchanged to its own n ≥ 30 judgement.
+- This draft is kept for reference only, in case v2 fails and a further version is ever considered.
+- Adopting any part of it means a new `STRATEGY_VERSION`, a fresh evaluation period, and no pooling with v2.
 
 ## Why
 

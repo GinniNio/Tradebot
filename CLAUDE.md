@@ -18,11 +18,18 @@ There is **one bot**: the managed service in `tradebot/`, hosted on Render with 
 
 Live URL: **https://tradebot-managed-staging.onrender.com** (dashboard login = `OPERATOR_DASHBOARD_USERNAME` / `OPERATOR_DASHBOARD_PASSWORD` in Render). Kaye uses it from either laptop in a browser. Routine use needs no terminal or database credentials.
 
-## Current status (2026-10-20)
+## Current status (2026-10-28)
 
 - Deployed: `a8323f6` (PR #14), migration `0004_trigger_source`, strategy version `market_watch_v2`. Checked on `/healthz` at 18:07 UTC on 2026-10-20: scanner `active`, 135 cycles in the 33.8 h since the merge (one per 15 minutes), no cycle error, no overdue or failed checks.
-- **7-day collection checkpoint: 2026-10-26.** That review is about throughput (qualifying tokens, rejection reasons, completed and unresolved checks), not profitability. Read `python -m tradebot.verdict --days 7` and `python -m tradebot.checkpoint --days 7 --graduates` first.
-- v2 is frozen until then. A v3 proposal (established tokens, score tiers, Option A pool aggregation) is drafted in `docs/V3_SPEC_DRAFT.md` for that review; it is not approved or implemented.
+- **7-day checkpoint, read on 2026-10-28 from `/report`** (throughput, not profitability):
+  - 96 scans a day, none failed.
+  - Recheck pool 1,144–1,378 tokens.
+  - 7 eligible and 39 control tokens enrolled. All 7 eligible and 37 control came from the 1–7 day recheck; the new-token feed gave 0 eligible and 1 control.
+  - Eligible observations were bursty: 1 on 10-21, 3 on 10-25, 6 on 10-26, none on the other days.
+  - 93,094 observations were rejected for a missing 1h change.
+  - Early 24h results (n=7, not a verdict): eligible median -36.4%, 6 of 7 losing; control median -13.2% (n=35); SOL +0.3%.
+- **Decision (Kaye, 2026-10-28):** v2 is finding tokens, so the switch-or-retire rule does not apply. v2 keeps running unchanged and is judged at n ≥ 30 against the pre-registered tests, then the 2026-12-31 kill criterion. No rule changes against these early returns.
+- v3 (`docs/V3_SPEC_DRAFT.md`) is **parked**: its premise, that v2 cannot find tokens, did not hold. `python -m tradebot.checkpoint` stays available for read-only checks.
 - Why v2 exists: in 30 days v1 scored 7,270 rows and found 1 eligible token and 5 score-only rejects, and outcomes were only measured after a manual dashboard click. A live sample on 2026-10-19 found the Dexscreener profile feed is almost all tokens under 10 hours old, and liquidity under $50k is the dominant rejection.
 - Decision rule after the checkpoint: if v2 still produces almost no qualifying tokens, change the discovery source or retire the experiment. Do not loosen filters to make numbers look active.
 
@@ -139,7 +146,7 @@ Legacy strategy dispositions (from `docs/SOLO_OPERATOR_SCOPE.md` and the May–J
 - 2026-09-09/10: managed rebuild (PRs #2–#7): Render, Neon, market-watch queue, dashboard.
 - 2026-10-19: v1 audit (1 eligible in 30 days). PR #8: `market_watch_v2` automatic measurement, recheck, `/report` and CSVs, migrations on start. PR #9 plus a Render env fix: the scanner lock works again on Neon.
 - 2026-10-19: PR #14 (`a8323f6`): report answers three questions, trigger source recorded, frozen eligibility golden test.
-- 2026-10-26: 7-day collection checkpoint (throughput, not profitability) and the v3 decision (`docs/V3_SPEC_DRAFT.md`).
+- 2026-10-28: 7-day checkpoint read: v2 found 7 eligible tokens, all via recheck; v2 continues unchanged and v3 is parked.
 - 2026-12-24: last day to admit 7-day cohorts that must mature before the decision.
 - 2026-12-31: kill-criterion decision.
 
