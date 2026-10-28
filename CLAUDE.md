@@ -18,10 +18,18 @@ There is **one bot**: the managed service in `tradebot/`, hosted on Render with 
 
 Live URL: **https://tradebot-managed-staging.onrender.com** (dashboard login = `OPERATOR_DASHBOARD_USERNAME` / `OPERATOR_DASHBOARD_PASSWORD` in Render). Kaye uses it from either laptop in a browser. Routine use needs no terminal or database credentials.
 
-## Current status (2026-10-19)
+## Current status (2026-10-28)
 
-- Deployed: `e0f46b3` (PRs #8 and #9), migration `0003_research_experiment`, strategy version `market_watch_v2`.
-- Scanner active from the 06:11 UTC redeploy. **7-day collection checkpoint: about 2026-10-26**, once two scheduled cycles on this deploy are confirmed. That review is about throughput (qualifying tokens, rejection reasons, completed and unresolved checks), not profitability.
+- Deployed: `a8323f6` (PR #14), migration `0004_trigger_source`, strategy version `market_watch_v2`. Checked on `/healthz` at 18:07 UTC on 2026-10-20: scanner `active`, 135 cycles in the 33.8 h since the merge (one per 15 minutes), no cycle error, no overdue or failed checks.
+- **7-day checkpoint, read on 2026-10-28 from `/report`** (throughput, not profitability):
+  - 96 scans a day, none failed.
+  - Recheck pool 1,144–1,378 tokens.
+  - 7 eligible and 39 control tokens enrolled. All 7 eligible and 37 control came from the 1–7 day recheck; the new-token feed gave 0 eligible and 1 control.
+  - Eligible observations were bursty: 1 on 10-21, 3 on 10-25, 6 on 10-26, none on the other days.
+  - 93,094 observations were rejected for a missing 1h change.
+  - Early 24h results (n=7, not a verdict): eligible median -36.4%, 6 of 7 losing; control median -13.2% (n=35); SOL +0.3%.
+- **Decision (Kaye, 2026-10-28):** v2 is finding tokens, so the switch-or-retire rule does not apply. v2 keeps running unchanged and is judged at n ≥ 30 against the pre-registered tests, then the 2026-12-31 kill criterion. No rule changes against these early returns.
+- v3 (`docs/V3_SPEC_DRAFT.md`) is **parked**: its premise, that v2 cannot find tokens, did not hold. `python -m tradebot.checkpoint` stays available for read-only checks.
 - Why v2 exists: in 30 days v1 scored 7,270 rows and found 1 eligible token and 5 score-only rejects, and outcomes were only measured after a manual dashboard click. A live sample on 2026-10-19 found the Dexscreener profile feed is almost all tokens under 10 hours old, and liquidity under $50k is the dominant rejection.
 - Decision rule after the checkpoint: if v2 still produces almost no qualifying tokens, change the discovery source or retire the experiment. Do not loosen filters to make numbers look active.
 
@@ -77,6 +85,7 @@ Before calling anything promising: the median and the mean must both hold up, re
 | `repository.py` | Candidate listing and operator decisions. |
 | `dexscreener.py` | Rate-budgeted client: discovery, pairs, batch pairs, SOL price. |
 | `verdict.py` | Report calculations, CSV, CLI. |
+| `checkpoint.py` | Read-only checkpoint CLI: score bands of stored passers, control score at enrolment, `--graduates` pool sizing on Dexscreener. Never reads returns. |
 | `health.py`, `doctor.py` | Health payload; one-off diagnostic CLI. |
 
 Migrations live in `alembic/versions/` (0001 foundation, 0002 market watch queue, 0003 research experiment, 0004 `outcome_checks.trigger_source`). They are additive. Tables: `strategy_versions`, `source_events`, `research_candidates`, `market_snapshots`, `candidate_decisions`, `outcome_checks`, `scan_cycles`, `operator_settings`, plus `quote_snapshots` and `evidence_items` (created, not yet written to).
@@ -107,6 +116,9 @@ Postgres tests locally: start a disposable Postgres 16, `alembic upgrade head`, 
 - **Dexscreener fields can be missing** (for example `priceChange.h1` on young pairs). `strategy._d` treats unparseable values as missing; keep it that way.
 - **Storage.** `source_events` and `market_snapshots` keep raw JSON for every stored observation. Rechecks store only hard-filter passes to keep Neon small.
 - `HEAD /` returns 405 in Render logs: Render's port probe. Harmless.
+- **One failed scan during a deploy that migrates.** During the #14 deploy one cycle failed with asyncpg `InvalidCachedStatementError`, then scans resumed on their own. Provisional explanation: the old instance's cached prepared statement went stale when the new instance's migration altered `outcome_checks`. Resumed scanning is shown; whether any work from that cycle was lost was not reconciled.
+- `/healthz` lists providers as `unavailable` when no API key is set. Dexscreener's public API needs none, so that line is not a fault.
+- Dexscreener `/tokens/v1/solana/{mints}` returns one pool per token; `/token-pairs/v1/solana/{mint}` returns all of them (checked 2026-10-20).
 
 ## Operating doctrine (locked)
 
@@ -133,7 +145,8 @@ Legacy strategy dispositions (from `docs/SOLO_OPERATOR_SCOPE.md` and the May–J
 - 2026-05-22 to 2026-07: legacy Windows bot research (zombie verdict 2026-05-28, graduation tracker 2026-06-05).
 - 2026-09-09/10: managed rebuild (PRs #2–#7): Render, Neon, market-watch queue, dashboard.
 - 2026-10-19: v1 audit (1 eligible in 30 days). PR #8: `market_watch_v2` automatic measurement, recheck, `/report` and CSVs, migrations on start. PR #9 plus a Render env fix: the scanner lock works again on Neon.
-- ~2026-10-26: 7-day collection checkpoint (throughput, not profitability).
+- 2026-10-19: PR #14 (`a8323f6`): report answers three questions, trigger source recorded, frozen eligibility golden test.
+- 2026-10-28: 7-day checkpoint read: v2 found 7 eligible tokens, all via recheck; v2 continues unchanged and v3 is parked.
 - 2026-12-24: last day to admit 7-day cohorts that must mature before the decision.
 - 2026-12-31: kill-criterion decision.
 
