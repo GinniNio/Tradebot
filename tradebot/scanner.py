@@ -14,7 +14,7 @@ class ScannerState:
 
 
 class ManagedScanner:
-    """PR A scanner shell. It drains durable work only; no providers or discovery."""
+    """Runs one cycle callable on a fixed interval until shutdown; records errors by category."""
 
     def __init__(
         self,

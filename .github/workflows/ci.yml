@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: Lint managed package
         run: ruff check tradebot tests
       - name: Run credential-free tests
@@ -46,7 +46,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install migration dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
       - name: Alembic upgrade head twice
         run: |
           alembic upgrade head

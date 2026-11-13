@@ -86,13 +86,14 @@ Before calling anything promising: the median and the mean must both hold up, re
 | `dexscreener.py` | Rate-budgeted client: discovery, pairs, batch pairs, SOL price. |
 | `verdict.py` | Report calculations, CSV, CLI. |
 | `checkpoint.py` | Read-only checkpoint CLI: score bands of stored passers, control score at enrolment, `--graduates` pool sizing on Dexscreener. Never reads returns. |
+| `candidate_rendering.py`, `serialization.py` | Audit-row HTML for `/candidates`; Decimal/JSON encoding helpers. |
 | `health.py`, `doctor.py` | Health payload; one-off diagnostic CLI. |
 
 Migrations live in `alembic/versions/` (0001 foundation, 0002 market watch queue, 0003 research experiment, 0004 `outcome_checks.trigger_source`). They are additive. Tables: `strategy_versions`, `source_events`, `research_candidates`, `market_snapshots`, `candidate_decisions`, `outcome_checks`, `scan_cycles`, `operator_settings`, plus `quote_snapshots` and `evidence_items` (created, not yet written to).
 
 ## Shipping a change
 
-1. Branch, change, then run locally: `ruff check tradebot tests --target-version py312` (CI runs Python 3.12; without the flag, newer ruff misses UP017), `python -m pytest -m "not postgres"`, and the Postgres tests when the change touches SQL (below).
+1. Branch, change, then run locally: `pip install -r requirements-dev.txt` once, then `ruff check tradebot tests` (`ruff.toml` pins the py312 target, same as CI), `python -m pytest -m "not postgres"`, and the Postgres tests when the change touches SQL (below).
 2. Open a PR. CI jobs: `test` (lint plus unit tests) and `postgres-migrations` (upgrade twice, downgrade one step and back, `pytest -m postgres`).
 3. Squash-merge when green. Render deploys `main` automatically, and the container applies migrations.
 4. Verify on the live `/healthz`: `build.git_commit_sha` is the new commit, `database.migration.revision` is the expected head, `scanner.state` is `active`, and `cycles_completed` rises on schedule. A standby scanner is a failed deploy even if the page loads.
