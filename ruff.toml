@@ -1,0 +1,2 @@
+# CI and local runs share this target; without it ruff misses py312-only rules.
+target-version = "py312"

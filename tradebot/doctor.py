@@ -45,7 +45,7 @@ async def run_doctor() -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Validate managed Tradebot foundation")
+    parser = argparse.ArgumentParser(description="Validate managed Tradebot configuration and database")
     parser.add_argument("--json", action="store_true", help="emit JSON output")
     parser.parse_args(argv)
     try:
